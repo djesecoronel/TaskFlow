@@ -49,7 +49,12 @@ export const ProjectProvider = ({ children }) => {
         };
         
         setProjects([syncProject]);
-        console.log("%c KERNEL_STATUS: Memoria purgada y Nodo Maestro [1] sincronizado. ", "color: #10b981; font-weight: bold;");
+        
+        // FIX: Evitamos el error de renderizado sacando el log del loop
+        setTimeout(() => {
+          console.log("%c KERNEL_STATUS: Memoria purgada y Nodo Maestro [1] sincronizado. ", "color: #10b981; font-weight: bold;");
+        }, 0);
+
       } catch (error) {
         console.error("KERNEL_CRITICAL: Error en la inicialización", error);
         setProjects([{ id: "1", name: "SISTEMA_CENTRAL", board: { columns: DEFAULT_COLUMNS }, tasks: [] }]);
@@ -70,7 +75,11 @@ export const ProjectProvider = ({ children }) => {
     const previousState = JSON.parse(history[0]);
     setProjects(previousState);
     setHistory(prev => prev.slice(1));
-    addNotification('SYSTEM', 'PROTOCOL: Acción revertida satisfactoriamente');
+    
+    // FIX: Timeout para evitar error de actualización de componente durante render
+    setTimeout(() => {
+      addNotification('SYSTEM', 'PROTOCOL: Acción revertida satisfactoriamente');
+    }, 0);
     return true;
   }, [history, addNotification]);
 
@@ -125,7 +134,9 @@ export const ProjectProvider = ({ children }) => {
       downloadLink.remove();
       window.URL.revokeObjectURL(blobUrl);
 
-      addNotification('SUCCESS', `Bridge: Reporte ${fileExtension.toUpperCase()} descargado con éxito`);
+      setTimeout(() => {
+        addNotification('SUCCESS', `Bridge: Reporte ${fileExtension.toUpperCase()} descargado con éxito`);
+      }, 0);
       
       setProjects(prev => prev.map(p => 
         p.id === String(projectId) ? { 
@@ -136,7 +147,9 @@ export const ProjectProvider = ({ children }) => {
 
     } catch (error) {
       console.error("❌ [BRIDGE_SYNC_ERROR]:", error);
-      addNotification('ERROR', 'Error en la implementación del Bridge de reportes');
+      setTimeout(() => {
+        addNotification('ERROR', 'Error en la implementación del Bridge de reportes');
+      }, 0);
     }
   };
 
@@ -151,10 +164,14 @@ export const ProjectProvider = ({ children }) => {
         trigger: "MANUAL_ADAPTER_COMMAND"
       });
       
-      addNotification('SUCCESS', `ADAPTER: Protocolo enviado a ${recipientEmail}`);
+      setTimeout(() => {
+        addNotification('SUCCESS', `ADAPTER: Protocolo enviado a ${recipientEmail}`);
+      }, 0);
     } catch (error) {
       console.error("❌ [ADAPTER_SYNC_ERROR]:", error);
-      addNotification('ERROR', 'Error en el túnel de notificación');
+      setTimeout(() => {
+        addNotification('ERROR', 'Error en el túnel de notificación');
+      }, 0);
     }
   };
 
@@ -182,7 +199,10 @@ export const ProjectProvider = ({ children }) => {
       (now - lastActionRef.current.time) < 100;
 
     if (!isDuplicate) {
-      addNotification?.(type, message, taskId);
+      // FIX CRÍTICO: Timeout 0 para sacar el update del loop de renderizado
+      setTimeout(() => {
+        addNotification?.(type, message, taskId);
+      }, 0);
       lastActionRef.current = { id: taskId, type, time: now };
     }
   };
@@ -257,7 +277,9 @@ export const ProjectProvider = ({ children }) => {
 
     if (!currentUserId) {
         console.error("KERNEL_AUTH_ERROR: Identidad de operativo no detectada.");
-        addNotification('SYSTEM', 'ERROR: Sesión no válida');
+        setTimeout(() => {
+          addNotification('SYSTEM', 'ERROR: Sesión no válida');
+        }, 0);
         return;
     }
 
@@ -283,17 +305,17 @@ export const ProjectProvider = ({ children }) => {
       }));
     } catch (error) {
       console.error("TASK_SYNC_ERROR", error);
-      addNotification('SYSTEM', 'ERROR: Fallo de persistencia');
+      setTimeout(() => {
+        addNotification('SYSTEM', 'ERROR: Fallo de persistencia');
+      }, 0);
     }
   };
 
-  // --- [PROTOCOLO DE ACTUALIZACIÓN: MUTACIÓN DE NODO] ---
   const updateTask = async (projectId, taskId, updatedData) => {
     saveSnapshot();
     console.log(`%c 🔄 [MUTATION_INIT]: Actualizando unidad ${taskId}... `, "color: #6366f1; font-weight: bold;");
 
     try {
-      // Sincronización con el Nodo Central vía PUT
       const response = await axios.put(`${API_URL}/tasks/${taskId}`, updatedData);
       const synchronizedTask = response.data;
 
@@ -312,14 +334,17 @@ export const ProjectProvider = ({ children }) => {
         return proj;
       }));
 
-      addNotification('SUCCESS', `Nodo ${synchronizedTask.title} actualizado`);
+      setTimeout(() => {
+        addNotification('SUCCESS', `Nodo ${synchronizedTask.title} actualizado`);
+      }, 0);
     } catch (error) {
       console.error("❌ [MUTATION_SYNC_ERROR]:", error);
-      addNotification('ERROR', 'Fallo en la mutación de unidad');
+      setTimeout(() => {
+        addNotification('ERROR', 'Fallo en la mutación de unidad');
+      }, 0);
     }
   };
 
-  // --- [PATRÓN COMPOSITE: PROTOCOLO DE RAMIFICACIÓN JERÁRQUICA] ---
   const addSubtask = async (projectId, parentId, subtaskData) => {
     saveSnapshot();
     const currentUserId = user?.id || user?.user_id;
@@ -327,18 +352,15 @@ export const ProjectProvider = ({ children }) => {
     console.log(`%c 🌿 [COMPOSITE_INIT]: Ramificando subtarea bajo nodo padre ${parentId}... `, "color: #10b981; font-weight: bold;");
 
     try {
-      // 1. Preparación de unidad de trabajo (Composite Branch)
       const payload = {
         ...subtaskData,
         user_id: currentUserId,
         project_id: projectId
       };
 
-      // 2. Disparo de enlace al Nodo Central (Ruta Composite)
       const response = await axios.post(`${API_URL}/tasks/${parentId}/subtask`, payload);
       const savedSubtask = response.data;
 
-      // 3. Sincronización del Nodo Maestro local
       setProjects(prev => prev.map(proj => {
         if (proj.id === String(projectId)) {
           const updatedTasks = [...(proj.tasks || []), savedSubtask];
@@ -353,10 +375,14 @@ export const ProjectProvider = ({ children }) => {
         return proj;
       }));
 
-      addNotification('SUCCESS', 'COMPOSITE: Subtarea ramificada con éxito');
+      setTimeout(() => {
+        addNotification('SUCCESS', 'COMPOSITE: Subtarea ramificada con éxito');
+      }, 0);
     } catch (error) {
       console.error("❌ [COMPOSITE_SYNC_ERROR]:", error);
-      addNotification('ERROR', 'Error en el protocolo de jerarquías');
+      setTimeout(() => {
+        addNotification('ERROR', 'Error en el protocolo de jerarquías');
+      }, 0);
     }
   };
 
@@ -392,8 +418,6 @@ export const ProjectProvider = ({ children }) => {
   };
 
   const deleteTask = async (projectId, taskId) => {
-      console.log(`%c 💣 [CONTEXT_PURGE]: Iniciando secuencia para tarea ${taskId}... `, "color: #f43f5e; font-weight: bold;");
-      
       saveSnapshot(); 
 
       try {
@@ -406,17 +430,13 @@ export const ProjectProvider = ({ children }) => {
           return p;
         }));
 
-        console.log("✅ [CONTEXT_SUCCESS]: Unidad purgada en el Nodo Central.");
       } catch (error) {
-        console.error("❌ [CONTEXT_ERROR]: La base de datos rechazó la purga.", error);
-        alert("No se pudo eliminar la tarea de la base de datos.");
+        console.error("❌ [CONTEXT_ERROR]:", error);
       }
   };
 
   const cloneTask = async (projectId, taskId) => {
     saveSnapshot(); 
-    console.log(`%c 🧬 [PROTOTYPE_INIT]: Clonando UUID -> ${taskId}`, "color: #a855f7; font-weight: bold;");
-
     try {
       const response = await axios.post(`${API_URL}/tasks/${taskId}/clone`);
       const duplicatedTask = response.data;
@@ -434,14 +454,14 @@ export const ProjectProvider = ({ children }) => {
         return proj;
       }));
 
-      addNotification('SUCCESS', 'Clonación profunda completada (Prototype)');
+      setTimeout(() => {
+        addNotification('SUCCESS', 'Clonación profunda completada (Prototype)');
+      }, 0);
     } catch (error) {
-      console.error("❌ [CLONE_ERROR]:", error.response?.data || error.message);
-      addNotification('ERROR', 'Error en el motor de duplicación');
+      console.error("❌ [CLONE_ERROR]:", error);
     }
   };
 
-  // --- [INTERFACE EXPOSURE] ---
   return (
     <ProjectContext.Provider value={{ 
       projects, 
@@ -455,7 +475,7 @@ export const ProjectProvider = ({ children }) => {
       undoLastAction, 
       historyLength: history.length,
       addTask, 
-      updateTask, // <--- EXPOSICIÓN DEL PROTOCOLO DE EDICIÓN
+      updateTask,
       addSubtask, 
       moveTask, 
       deleteTask,

@@ -55,6 +55,13 @@ class TaskServiceProxy(ITaskService):
         print(f"⚠️ [PROXY_CRITICAL]: Se ha solicitado la eliminación permanente del nodo {task_id}")
         return self._real_service.delete_task(task_id)
 
+    # --- [NUEVO PROTOCOLO: AUDITORÍA DE NOTIFICACIÓN ADAPTER] ---
+    def notify_and_log(self, task_id, recipient):
+        """El Proxy intercepta, audita y delega la transmisión de la señal."""
+        self._log_access("ADAPTER_TRANSMISSION", f"Unidad: {task_id} | Destinatario: {recipient}")
+        # Delegamos al servicio real para que ejecute los adaptadores y persista el log en DB
+        return self._real_service.notify_and_log(task_id, recipient)
+
     def move_task(self, task_id, column_id):
         self._log_access("KANBAN_SHIFT", f"Unidad {task_id} -> {column_id}")
         return self._real_service.move_task(task_id, column_id)
@@ -85,7 +92,7 @@ class TaskServiceProxy(ITaskService):
     # --- [VISUAL INTERCEPTION] ---
 
     def set_theme(self, theme_name):
-        self._log_access("VISUAL_OVERRIDE", f"Aplicando protocolo estético {theme_name}")
+        self._log_access("VISUAL_OVER_RIDE", f"Aplicando protocolo estético {theme_name}")
         return self._real_service.set_theme(theme_name)
 
     # --- [ADAPTERS & NOTIFICATIONS] ---
@@ -94,10 +101,10 @@ class TaskServiceProxy(ITaskService):
         print(f"🔌 [PROXY_LINK]: Acoplando adaptador de notificación: {type(notifier).__name__}")
         return self._real_service.add_notifier(notifier)
 
-    def _notify_all(self, title, message):
+    def _notify_all(self, title, message, recipient=None):
         """Auditoría de Broadcast: El Proxy vigila las comunicaciones externas."""
-        self._log_access("BROADCAST_SIGNAL", f"Canal de Alerta: {title}")
-        return self._real_service._notify_all(title, message)
+        self._log_access("BROADCAST_SIGNAL", f"Canal de Alerta: {title} | Receptor: {recipient}")
+        return self._real_service._notify_all(title, message, recipient)
 
     # --- [STRUCTURAL PATTERNS] ---
 

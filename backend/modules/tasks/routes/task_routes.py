@@ -113,29 +113,17 @@ class TaskReportResource(Resource):
 class TestNotification(Resource):
     @task_ns.expect(notification_test_model)
     def post(self):
-        """Patrón Adapter: Disparo de notificación dinámica y dirigida vía UI"""
+        """Patrón Adapter: Disparo de notificación dinámica con registro de Auditoría"""
         data = request.json
         task_id = data.get('task_id')
         recipient = data.get('recipient', 'ADMIN_SISTEMA')
         
-        print(f"📡 [ADAPTER_ROUTE]: Protocolo de notificación iniciado para: {recipient}")
+        print(f"📡 [ADAPTER_ROUTE]: Protocolo iniciado para -> {recipient}")
         
-        # Construcción del mensaje dinámico extrayendo datos de la tarea
-        message = "Prueba de conexión exitosa."
-        if task_id:
-            task = service.get_task(task_id)
-            if task:
-                message = f"ALERTA OPERATIVA: La unidad '{task.title}' requiere su atención inmediata."
+        # Invocamos el nuevo método del servicio que orquesta la notificación y el log
+        result = service.notify_and_log(task_id, recipient)
         
-        # Disparo a través del motor Adapter (Broadcast)
-        # Nota: Los adaptadores recibirán este mensaje y el contexto del destinatario
-        service._notify_all(f"ALERTA TASKFLOW: {recipient}", message)
-        
-        return {
-            "status": "NOTIFICACIONES_PROCESADAS", 
-            "target_operative": recipient,
-            "active_adapters": 2
-        }, 200
+        return result, 200
 
 # --- ENDPOINTS: CRUD PRINCIPAL (AUDITADOS POR PROXY) ---
 

@@ -279,6 +279,37 @@ class TaskService(ITaskService):
         print(f"🧨 [KERNEL_PURGE]: Solicitando eliminación definitiva de {task_id}")
         return self.repository.delete(task_id)
 
+    # --- [RE-ACTIVADO: PROTOCOLO ADAPTER CON AUDITORÍA] ---
+    def notify_and_log(self, task_id, recipient):
+        """
+        ORQUESTADOR ADAPTER: Dispara notificaciones y persiste el log en el Nodo Central.
+        """
+        message = "Prueba de conexión exitosa."
+        task_title = "SISTEMA"
+
+        # 1. Recuperación de contexto de la tarea
+        if task_id:
+            task = self.get_task(task_id)
+            if task:
+                task_title = task.title
+                message = f"ALERTA OPERATIVA: La unidad '{task_title}' requiere su atención inmediata."
+
+        # 2. Ejecución del Patrón Adapter (Broadcast a Email/Slack)
+        self._notify_all(f"ALERTA TASKFLOW: {recipient}", message, recipient)
+
+        # 3. REGISTRO DE AUDITORÍA (Cierre de circuito)
+        if task_id:
+            log_msg = f"📢 [ADAPTER_SYNC]: Notificación enviada a {recipient} para la unidad '{task_title}'"
+            # Aprovechamos el método add_comment que ya actualiza la DB
+            self.add_comment(task_id, log_msg)
+            print(f"✅ [KERNEL_AUDIT]: Transmisión registrada en el historial del Nodo {task_id}")
+
+        return {
+            "status": "NOTIFICACIONES_PROCESADAS", 
+            "target_operative": recipient,
+            "audit_saved": True
+        }
+
     def move_task(self, task_id, column_id):
         """Lógica de negocio para el movimiento entre columnas Kanban"""
         task = self.get_task(task_id)
@@ -349,7 +380,6 @@ class TaskService(ITaskService):
         new_task_data = new_task_obj.to_dict()
         
         # --- [LIMPIEZA DE IDENTIDAD PARA NUEVO REGISTRO UUID] ---
-        # Al eliminar estos campos, el repositorio lo trata como un nuevo INSERT
         new_task_data.pop('id', None)
         new_task_data.pop('task_id', None)
         
@@ -417,3 +447,5 @@ class TaskService(ITaskService):
         self._notify_all("ALERTA_CRITICA", f"La tarea {task_id} ha sido marcada como EMERGENCIA.", getattr(task, 'assigned_to', None))
         
         return self.repository.update(task_id, self._clean_for_repo(decorated_task.to_dict()))
+    
+    

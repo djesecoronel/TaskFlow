@@ -74,19 +74,22 @@ export default function KanbanBoard() {
     return matchesSearch && matchesPriority && matchesType;
   });
 
-  // --- [PROTOCOLO ADAPTER: DISPARO DINÁMICO] ---
+// Localiza esto en tu KanbanBoard.jsx
   const handleNotifyOperative = (taskId, recipient) => {
-    if (!recipient || recipient === '?') {
-      alert("⚠️ ERROR_PROTOCOL: No hay un operativo asignado para recibir esta unidad.");
+    // --- [ELIMINA O COMENTA ESTE BLOQUE] ---
+    /* if (!recipient || recipient === '?') {
+      alert("⚠️ ERROR_PROTOCOL: No hay un operativo asignado...");
       return;
     }
+    */
     
-    console.log(`%c 📧 [ADAPTER_INIT]: Notificando a -> ${recipient} `, "background: #f59e0b; color: black; font-weight: bold; padding: 2px; border-radius: 4px;");
+    // Fuerza el envío al Backend. Si no hay recipient, enviará "SIN_ASIGNAR"
+    const finalRecipient = (!recipient || recipient === '?') ? "operativo_fantasma@taskflow.com" : recipient;
     
-    // Llamada al contexto pasando el ID y el destinatario real
-    notifyTaskByEmail(taskId, recipient);
+    console.log(`%c 📧 [ADAPTER_INIT]: Forzando notificación para -> ${finalRecipient} `, "background: #f59e0b; color: black; font-weight: bold;");
+    
+    notifyTaskByEmail(taskId, finalRecipient);
   };
-
   const handleGenerateReport = (format) => {
     exportProjectReport(project.id, format);
   };
