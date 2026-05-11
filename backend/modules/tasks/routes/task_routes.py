@@ -85,7 +85,7 @@ class TaskTheme(Resource):
 class TaskReportResource(Resource):
     @task_ns.expect(report_model)
     def post(self):
-        """Patrón Bridge: Generar Reporte desacoplado (PDF/Excel) vía Proxy"""
+        """Patrón Bridge: Generar Reporte desacoplada (PDF/Excel) vía Proxy"""
         data = request.json
         return service.generate_report(data.get('format', 'pdf')), 200
 
@@ -230,6 +230,7 @@ class AttachmentTask(Resource):
 class CloneTask(Resource):
     def post(self, id):
         """Patrón Prototype: Clonación profunda de unidad de trabajo"""
+        print(f"🧬 [PROTOTYPE_SYNC]: Iniciando duplicación de unidad UUID: {id}")
         task = service.clone_task(id)
         if not task:
             return {"error": "ERROR_CLONACION"}, 404

@@ -17,7 +17,18 @@ export default function KanbanBoard() {
   const { search } = useLocation(); 
   const { user } = useAuth();
   const { theme, isDarkMode } = useTheme(); 
-  const { projects, updateColumns, addTask, moveTask, inviteMember, removeMember } = useProjects();
+  
+  // --- [CORE_COMMAND: INYECCIÓN DE LÓGICA DE PROYECTOS] ---
+  const { 
+    projects, 
+    updateColumns, 
+    addTask, 
+    moveTask, 
+    cloneTask, 
+    exportProjectReport, // Inyectamos la Interfaz Bridge
+    inviteMember, 
+    removeMember 
+  } = useProjects();
   
   const queryParams = new URLSearchParams(search);
   const focusedTaskId = queryParams.get('focus');
@@ -59,9 +70,11 @@ export default function KanbanBoard() {
     return matchesSearch && matchesPriority && matchesType;
   });
 
+  // --- [PROTOCOLO BRIDGE: DISPARO DE IMPLEMENTACIÓN BINARIA] ---
   const handleGenerateReport = (format) => {
-    console.log(`[BRIDGE PROTOCOL]: Solicitando reporte en formato ${format.toUpperCase()}`);
-    alert(`Generando Reporte ${format.toUpperCase()}... (Backend Bridge 200 OK)`);
+    console.log(`%c [BRIDGE_PROTOCOL]: Solicitando descarga en formato ${format.toUpperCase()} `, "color: #10b981; font-weight: bold;");
+    // Llamada al método exportador del ProjectContext
+    exportProjectReport(project.id, format);
   };
 
   const handleSaveCurrentFilter = () => {
@@ -162,14 +175,11 @@ export default function KanbanBoard() {
       <div className="flex gap-6 overflow-x-auto pb-8 custom-scrollbar items-start h-full">
         {columns.map((column) => {
           
-          // --- [CIRUGÍA DE FILTRADO REFORZADA] ---
           const columnTasks = filteredTasks.filter(t => {
             const taskStatus = (t.status || '').toUpperCase();
             const colTitle = (column.title || '').toUpperCase();
             const colId = (column.id || '').toUpperCase();
             
-            // Mapeo defensivo: coincidencia por Título o por ID técnico. 
-            // Blindamos contra discrepancias de texto para que las tareas no se oculten.
             return taskStatus === colTitle || 
                    taskStatus === colId ||
                    (t.column_id === column.id) ||
@@ -205,6 +215,27 @@ export default function KanbanBoard() {
                         : (isDarkMode ? 'bg-slate-800/40 border-slate-700/50' : 'bg-white border-slate-100 shadow-sm')
                       } ${isBug ? 'border-l-4 border-l-rose-500' : ''}`}
                     >
+                      {/* --- [TRIGGER PROTOTYPE: BOTÓN DE CLONACIÓN] --- */}
+                      <div className="absolute top-4 right-4 flex gap-2 opacity-0 group-hover:opacity-100 transition-all translate-y-2 group-hover:translate-y-0 z-20">
+                        <button 
+                          onClick={(e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            if(window.confirm("🧬 ¿INICIAR PROTOCOLO DE CLONACIÓN PROTOTYPE?")) {
+                              cloneTask(project.id, task.id || task.task_id);
+                            }
+                          }}
+                          className={`p-2 rounded-xl border transition-all shadow-xl ${
+                            isDarkMode 
+                            ? 'bg-slate-900 border-slate-700 text-indigo-400 hover:bg-indigo-600 hover:text-white' 
+                            : 'bg-white border-slate-200 text-indigo-600 hover:bg-indigo-600 hover:text-white'
+                          }`}
+                          title="CLONAR UNIDAD (PROTOTYPE)"
+                        >
+                          <Layers size={12} />
+                        </button>
+                      </div>
+
                       <div className="flex justify-between items-start mb-4">
                         <span className={`text-[8px] font-black px-2.5 py-1 rounded-lg border italic transition-colors ${
                           task.priority === 'URGENTE' || task.priority === 'URGENT' 
@@ -215,14 +246,14 @@ export default function KanbanBoard() {
                         </span>
                         
                         {(task.subtasks?.length > 0) && (
-                          <div className="flex items-center gap-1 text-indigo-500 animate-pulse">
+                          <div className="flex items-center gap-1 text-indigo-500 animate-pulse mr-8">
                             <Layers size={12} />
                             <span className="text-[9px] font-black">{task.subtasks.length}</span>
                           </div>
                         )}
                       </div>
                       
-                      <h4 className={`font-bold text-xs uppercase italic mb-6 leading-relaxed transition-colors ${theme.textMain}`}>
+                      <h4 className={`font-bold text-xs uppercase italic mb-6 leading-relaxed transition-colors pr-8 ${theme.textMain}`}>
                         {task.title}
                       </h4>
                       

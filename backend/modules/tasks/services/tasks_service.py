@@ -122,7 +122,6 @@ class TaskService(ITaskService):
             # --- [ACCIÓN DE PERSISTENCIA] ---
             # Aquí deberías tener una tabla 'user_settings' o 'projects' 
             # para guardar que este usuario prefiere el modo DARK.
-            # Ejemplo: self.repository.update_settings(user_id, {"theme": theme_name})
             
             print(f"🎨 [KERNEL_THEME]: Abstract Factory conmutado a {theme_name}")
             return {
@@ -303,13 +302,28 @@ class TaskService(ITaskService):
         return task
 
     def clone_task(self, task_id):
-        """Patrón Prototype: Clonación profunda de tareas"""
+        """
+        Patrón Prototype: Clonación profunda de tareas.
+        Se limpia el ID para que Supabase genere un nuevo UUID automáticamente.
+        """
+        print(f"🧬 [PROTOTYPE]: Iniciando clonación de unidad {task_id}")
         task = self.get_task(task_id)
         if not task:
             return None
 
-        new_task = task.clone()
-        return self.repository.create(self._clean_for_repo(new_task.to_dict()))
+        # Ejecutamos el método clone() del prototipo
+        new_task_obj = task.clone()
+        new_task_data = new_task_obj.to_dict()
+        
+        # --- [LIMPIEZA DE IDENTIDAD PARA NUEVO REGISTRO UUID] ---
+        # Al eliminar estos campos, el repositorio lo trata como un nuevo INSERT
+        new_task_data.pop('id', None)
+        new_task_data.pop('task_id', None)
+        
+        # Modificamos el título para diferenciarlo
+        new_task_data["title"] = f"{new_task_data.get('title', 'Copia')} (Clone)"
+
+        return self.repository.create(self._clean_for_repo(new_task_data))
 
     def get_deadline_hours(self, task_id):
         """

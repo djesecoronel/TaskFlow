@@ -19,6 +19,10 @@ import Reports from './pages/Reports';
 // --- LAYOUT ---
 import MainLayout from './components/layout/MainLayout';
 
+/* -----------------------------------------------------------
+   COMPONENTES AUXILIARES (LOGICA DE PROTOCOLO)
+   ----------------------------------------------------------- */
+
 const ScrollToTop = () => {
   const { pathname } = useLocation();
   useEffect(() => { 
@@ -44,15 +48,21 @@ const PrivateRoute = ({ children }) => {
   return user ? children : <Navigate to="/login" replace />;
 };
 
+/* -----------------------------------------------------------
+   APLICACIÓN PRINCIPAL (ORDEN DE ENCENDIDO)
+   ----------------------------------------------------------- */
+
 function App() {
   return (
     <Router> 
-      {/* JERARQUÍA DE PROVEEDORES REESTRUCTURADA:
-          El AuthProvider va primero porque ProjectProvider necesita la identidad del usuario.
-          El ProjectProvider ahora envuelve al ThemeProvider para permitir la sincronización visual.
+      {/* JERARQUÍA DE PODER (TOP-DOWN):
+          1. NotificationProvider: El "sistema de altavoces". Debe estar encendido primero.
+          2. AuthProvider: Identidad. Necesaria para cargar proyectos.
+          3. ProjectProvider: Lógica de negocio. Consume Notificaciones y Auth.
+          4. ThemeProvider: Capa estética. Consume al ProjectProvider para syncTheme.
       */}
-      <AuthProvider>
-        <NotificationProvider>
+      <NotificationProvider>
+        <AuthProvider>
           <ProjectProvider>
             <ThemeProvider>
               <ScrollToTop />
@@ -61,7 +71,7 @@ function App() {
                 <Route path="/login" element={<Login />} />
                 <Route path="/register" element={<Register />} />
 
-                {/* RUTAS PRIVADAS */}
+                {/* RUTAS PRIVADAS (ENCAPSULADAS EN MAINLAYOUT) */}
                 <Route path="/" element={
                   <PrivateRoute>
                     <MainLayout />
@@ -81,8 +91,8 @@ function App() {
               </Routes>
             </ThemeProvider>
           </ProjectProvider>
-        </NotificationProvider>
-      </AuthProvider>
+        </AuthProvider>
+      </NotificationProvider>
     </Router>
   );
 }

@@ -23,15 +23,16 @@ export const ProjectProvider = ({ children }) => {
   const lastActionRef = useRef({ id: null, type: null, time: 0 });
   const [history, setHistory] = useState([]); 
 
+  // --- [ESTADO DEL KERNEL] ---
   const [projects, setProjects] = useState([]);
   const [loading, setLoading] = useState(true);
 
-  // Efecto de limpieza y preparación para DB real (Sincronización con Python)
+  // --- [PROTOCOLO DE INICIALIZACIÓN DE NODO] ---
   useEffect(() => {
     const initializeCore = async () => {
       try {
         setLoading(true);
-        console.log("KERNEL_STATUS: Iniciando protocolo de enlace con el Nodo Central...");
+        console.log("%c KERNEL_STATUS: Iniciando protocolo de enlace con el Nodo Central... ", "color: #818cf8; font-weight: bold;");
         
         localStorage.removeItem('tf_projects');
         
@@ -48,7 +49,7 @@ export const ProjectProvider = ({ children }) => {
         };
         
         setProjects([syncProject]);
-        console.log("KERNEL_STATUS: Memoria purgada y Nodo Maestro [1] sincronizado.");
+        console.log("%c KERNEL_STATUS: Memoria purgada y Nodo Maestro [1] sincronizado. ", "color: #10b981; font-weight: bold;");
       } catch (error) {
         console.error("KERNEL_CRITICAL: Error en la inicialización", error);
         setProjects([{ id: "1", name: "SISTEMA_CENTRAL", board: { columns: DEFAULT_COLUMNS }, tasks: [] }]);
@@ -59,6 +60,7 @@ export const ProjectProvider = ({ children }) => {
     initializeCore();
   }, [user]);
 
+  // --- [PATRÓN MEMENTO: GESTIÓN DE HISTORIAL] ---
   const saveSnapshot = useCallback(() => {
     setHistory(prev => [JSON.stringify(projects), ...prev].slice(0, 10));
   }, [projects]);
@@ -75,18 +77,20 @@ export const ProjectProvider = ({ children }) => {
   // --- [ABSTRACT FACTORY: PERSISTENCIA DE TEMA CON IDENTIDAD] ---
   const syncThemeWithBackend = async (themeName) => {
     try {
-      const currentUserId = user?.id || user?.user_id;
-      console.log(`🎨 [THEME_SYNC]: Sincronizando Abstract Factory -> ${themeName.toUpperCase()}`);
+      const currentUserId = user?.id || user?.user_id || "GHOST_OPERATIVE";
+      const targetTheme = String(themeName).toUpperCase();
+
+      console.log(`%c 🎨 [THEME_SYNC]: Notificando Abstract Factory -> ${targetTheme} `, "background: #4f46e5; color: white; padding: 3px; border-radius: 4px;");
       
       await axios.post(`${API_URL}/tasks/theme`, { 
-        theme: themeName.toUpperCase(),
-        user_id: currentUserId // Enviamos identidad al proxy
+        theme: targetTheme,
+        user_id: currentUserId 
       });
 
       setProjects(prev => prev.map(p => 
         p.id === "1" ? { 
           ...p, 
-          auditLog: [createAuditEntry('THEME_CHANGE', themeName), ...(p.auditLog || [])] 
+          auditLog: [createAuditEntry('THEME_CHANGE', targetTheme), ...(p.auditLog || [])] 
         } : p
       ));
     } catch (error) {
@@ -94,6 +98,50 @@ export const ProjectProvider = ({ children }) => {
     }
   };
 
+  // --- [PATRÓN BRIDGE: INTERFAZ DE EXPORTACIÓN DE REPORTES] ---
+  const exportProjectReport = async (projectId, format) => {
+    console.log(`%c 🌉 [BRIDGE_REPORT]: Iniciando protocolo de descarga en formato ${format.toUpperCase()}... `, "background: #10b981; color: white; padding: 3px; border-radius: 4px;");
+    
+    try {
+      // Disparo al endpoint Bridge del backend
+      const response = await axios({
+        url: `${API_URL}/tasks/report`,
+        method: 'POST',
+        data: { format: format.toLowerCase() },
+        responseType: 'blob', // REQUERIDO: Para manejar el binario del PDF/Excel
+      });
+
+      // Crear el túnel de descarga en el navegador
+      const blobUrl = window.URL.createObjectURL(new Blob([response.data]));
+      const downloadLink = document.createElement('a');
+      downloadLink.href = blobUrl;
+      
+      const timestamp = new Date().toISOString().split('T')[0];
+      downloadLink.setAttribute('download', `REPORT_TASKFLOW_${timestamp}.${format}`);
+      
+      document.body.appendChild(downloadLink);
+      downloadLink.click();
+      
+      // Limpieza de recursos de memoria
+      downloadLink.remove();
+      window.URL.revokeObjectURL(blobUrl);
+
+      addNotification('SUCCESS', `Bridge: Reporte ${format.toUpperCase()} descargado con éxito`);
+      
+      setProjects(prev => prev.map(p => 
+        p.id === String(projectId) ? { 
+          ...p, 
+          auditLog: [createAuditEntry('EXPORT', format), ...(p.auditLog || [])] 
+        } : p
+      ));
+
+    } catch (error) {
+      console.error("❌ [BRIDGE_SYNC_ERROR]:", error);
+      addNotification('ERROR', 'Error en la implementación del Bridge de reportes');
+    }
+  };
+
+  // --- [AUXILIARES DE AUDITORÍA Y MÉTRICAS] ---
   const createAuditEntry = (action, target) => ({
     id: Date.now() + Math.random(),
     user: user?.email?.split('@')[0] || 'SISTEMA',
@@ -102,6 +150,12 @@ export const ProjectProvider = ({ children }) => {
     time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
     fullDate: new Date().toISOString()
   });
+
+  const calculateProgress = (tasks) => {
+    if (!tasks || tasks.length === 0) return 0;
+    const completedTasks = tasks.filter(t => ['Completado', 'col-4', 'COMPLETADO', 'DONE', 'DONE_STATUS'].includes(t.status)).length;
+    return Math.round((completedTasks / tasks.length) * 100);
+  };
 
   const safeNotify = (type, message, taskId) => {
     const now = Date.now();
@@ -116,18 +170,13 @@ export const ProjectProvider = ({ children }) => {
     }
   };
 
-  const calculateProgress = (tasks) => {
-    if (!tasks || tasks.length === 0) return 0;
-    const completedTasks = tasks.filter(t => ['Completado', 'col-4', 'COMPLETADO', 'DONE', 'DONE_STATUS'].includes(t.status)).length;
-    return Math.round((completedTasks / tasks.length) * 100);
-  };
-
   const isOwner = (projectOwnerEmail) => user?.email === projectOwnerEmail;
 
   const globalAuditLog = (projects || []).flatMap(p => 
     (p.auditLog || []).map(log => ({ ...log, projectName: p.name }))
   ).sort((a, b) => new Date(b.fullDate) - new Date(a.fullDate)).slice(0, 50);
 
+  // --- [FACADE: GESTIÓN DE TAREAS Y PROYECTOS] ---
   const addProject = (project) => {
     saveSnapshot();
     const newProject = {
@@ -277,6 +326,37 @@ export const ProjectProvider = ({ children }) => {
     }
   };
 
+  // --- [PATRÓN PROTOTYPE: MOTOR DE REPLICACIÓN DE UNIDADES] ---
+  const cloneTask = async (projectId, taskId) => {
+    saveSnapshot(); 
+    
+    console.log(`%c 🧬 [PROTOTYPE_INIT]: Clonando UUID -> ${taskId}`, "color: #a855f7; font-weight: bold;");
+
+    try {
+      const response = await axios.post(`${API_URL}/tasks/${taskId}/clone`);
+      const duplicatedTask = response.data;
+
+      setProjects(prev => prev.map(proj => {
+        if (proj.id === String(projectId)) {
+          const updatedTasks = [...(proj.tasks || []), duplicatedTask];
+          return { 
+            ...proj, 
+            tasks: updatedTasks,
+            progress: calculateProgress(updatedTasks),
+            auditLog: [createAuditEntry('CLONACION_PROTOTYPE', duplicatedTask.title), ...(proj.auditLog || [])]
+          };
+        }
+        return proj;
+      }));
+
+      addNotification('SUCCESS', 'Clonación profunda completada (Prototype)');
+    } catch (error) {
+      console.error("❌ [CLONE_ERROR]:", error.response?.data || error.message);
+      addNotification('ERROR', 'Error en el motor de duplicación');
+    }
+  };
+
+  // --- [INTERFACE EXPOSURE] ---
   return (
     <ProjectContext.Provider value={{ 
       projects, 
@@ -292,6 +372,8 @@ export const ProjectProvider = ({ children }) => {
       addTask, 
       moveTask, 
       deleteTask,
+      cloneTask, 
+      exportProjectReport, // EXPOSICIÓN DE LA ABSTRACCIÓN BRIDGE
       syncThemeWithBackend, 
       updateColumns: (projectId, newColumns) => {
         setProjects(prev => prev.map(proj => 
@@ -302,7 +384,7 @@ export const ProjectProvider = ({ children }) => {
       {children}
     </ProjectContext.Provider>
   );
-}; // <--- Cierre de ProjectProvider corregido
+};
 
 export const useProjects = () => {
   const context = useContext(ProjectContext);
