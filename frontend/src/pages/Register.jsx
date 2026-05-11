@@ -1,30 +1,46 @@
 import { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
-import { useTheme } from '../context/ThemeContext'; // IMPORTAR TEMA
+import { useTheme } from '../context/ThemeContext'; 
+import { useAuth } from '../context/AuthContext'; // <--- INYECTAMOS EL MOTOR DE AUTH
 import { UserPlus, Mail, Lock, User, ChevronLeft, ShieldCheck, Sparkles } from 'lucide-react';
 
 export default function Register() {
   const [formData, setFormData] = useState({ name: '', email: '', password: '' });
-  const { theme, isDarkMode } = useTheme(); // CONSUMIR TEMA
-  const navigate = useNavigate(); // El "chofer" que nos llevará de vuelta
+  const [loading, setLoading] = useState(false); // Estado de carga para el botón
+  const { theme, isDarkMode } = useTheme(); 
+  const { register } = useAuth(); // <--- CONSUMIMOS LA FUNCIÓN REAL
+  const navigate = useNavigate(); 
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
+    setLoading(true);
     
-    // Aquí iría la lógica de guardar en la base de datos (RF-01.1)
-    console.log("Usuario registrado:", formData);
+    console.log("%c 🧬 [REGISTER_PROTOCOL]: Iniciando despliegue de credenciales... ", "color: #10b981; font-weight: bold;");
 
-    // Simulamos un pequeño retraso para que parezca que está guardando
-    alert("¡Cuenta creada con éxito! Ahora puedes iniciar sesión.");
-    
-    // Redirigimos al Login
-    navigate('/login');
+    try {
+      // LLAMADA AL NODO CENTRAL (PROTOCOLO REAL)
+      await register({
+        name: formData.name,
+        email: formData.email,
+        password: formData.password
+      });
+
+      // Si el registro es exitoso, el AuthContext nos loguea automáticamente
+      console.log("%c ✅ [REGISTER_SUCCESS]: Operativo sincronizado. Redirigiendo al Dashboard... ", "color: #10b981; font-weight: bold;");
+      navigate('/dashboard'); // O a la ruta principal que uses
+
+    } catch (error) {
+      console.error("❌ [REGISTER_FAILED]: Fallo en la secuencia de alta.", error);
+      alert(error.response?.data?.message || "ERROR_PROTOCOL: No se pudo completar el registro.");
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
     <div className={`min-h-screen flex items-center justify-center px-4 relative overflow-hidden transition-colors duration-500 ${isDarkMode ? 'bg-slate-950' : 'bg-slate-50'}`}>
       
-      {/* DECORACIÓN DE FONDO ALPHA (Espejo del Login) */}
+      {/* DECORACIÓN DE FONDO ALPHA */}
       <div className="absolute top-0 left-0 w-full h-full overflow-hidden -z-10">
         <div className="absolute -bottom-[10%] -right-[10%] w-[50%] h-[50%] bg-emerald-500/10 blur-[120px] rounded-full animate-pulse" />
         <div className="absolute -top-[10%] -left-[10%] w-[40%] h-[40%] bg-indigo-500/5 blur-[100px] rounded-full" />
@@ -57,6 +73,7 @@ export default function Register() {
                 type="text" 
                 required
                 placeholder="Ej. Juan Pérez"
+                disabled={loading}
                 className={`w-full pl-12 pr-4 py-4 rounded-2xl border outline-none transition-all font-bold text-sm ${
                   isDarkMode 
                   ? 'bg-slate-950 border-slate-800 text-white focus:border-emerald-500/50 focus:ring-4 focus:ring-emerald-500/10' 
@@ -76,6 +93,7 @@ export default function Register() {
                 type="email" 
                 required
                 placeholder="correo@ejemplo.com"
+                disabled={loading}
                 className={`w-full pl-12 pr-4 py-4 rounded-2xl border outline-none transition-all font-bold text-sm ${
                   isDarkMode 
                   ? 'bg-slate-950 border-slate-800 text-white focus:border-emerald-500/50 focus:ring-4 focus:ring-emerald-500/10' 
@@ -95,6 +113,7 @@ export default function Register() {
                 type="password" 
                 required
                 placeholder="••••••••"
+                disabled={loading}
                 className={`w-full pl-12 pr-4 py-4 rounded-2xl border outline-none transition-all font-bold text-sm ${
                   isDarkMode 
                   ? 'bg-slate-950 border-slate-800 text-white focus:border-emerald-500/50 focus:ring-4 focus:ring-emerald-500/10' 
@@ -107,14 +126,15 @@ export default function Register() {
           
           <button 
             type="submit" 
-            className={`w-full group flex items-center justify-center gap-3 py-5 rounded-2xl font-black text-xs uppercase tracking-[0.2em] transition-all transform active:scale-95 shadow-xl ${
+            disabled={loading}
+            className={`w-full group flex items-center justify-center gap-3 py-5 rounded-2xl font-black text-xs uppercase tracking-[0.2em] transition-all transform active:scale-95 shadow-xl disabled:opacity-50 disabled:cursor-not-allowed ${
               isDarkMode 
               ? 'bg-emerald-600 text-white hover:bg-emerald-500 shadow-emerald-900/20' 
               : 'bg-emerald-600 text-white hover:bg-emerald-700 shadow-emerald-200'
             }`}
           >
-            <Sparkles size={18} className="animate-pulse" />
-            Initialize_Account
+            <Sparkles size={18} className={loading ? "animate-spin" : "animate-pulse"} />
+            {loading ? 'Sincronizando...' : 'Initialize_Account'}
           </button>
         </form>
 

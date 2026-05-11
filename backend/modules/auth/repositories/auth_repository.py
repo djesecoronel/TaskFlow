@@ -31,36 +31,28 @@ class AuthRepository:
             return None
 
     def create_user(self, user_data):
-        """
-        Inserta un nuevo operativo en la base de datos sincronizando columnas.
-        Asegura el mapeo correcto entre el Modelo de Dominio y Supabase.
-        """
+        """Inserta un nuevo operativo sincronizando con el esquema real de Supabase"""
         try:
-            # --- [MAPEADO DE CARGA ÚTIL (PAYLOAD)] ---
-            # Sincronizamos con los nombres exactos de tu esquema en Supabase
-            # Nota: Cambiamos 'password' por el nombre real de tu columna en la DB
+            # --- [MAPEADO DE PRECISIÓN SEGÚN DB] ---
             payload = {
                 "email": user_data.email,
-                "password_hash": user_data.password_hash, # Mapeo corregido
-                "role": getattr(user_data, 'role', 'DEVELOPER'),
                 "name": getattr(user_data, 'name', 'OPERATIVO_ANONIMO'),
-                "avatar": getattr(user_data, 'avatar', None)
+                "role": getattr(user_data, 'role', 'DEVELOPER'),
+                "avatar": getattr(user_data, 'avatar', None),
+                # Sincronización con la columna real 'password' detectada en la captura
+                "password": user_data.password_hash 
             }
             
-            print(f"📡 [DB_SYNC]: Intentando persistencia de nuevo operativo -> {payload['email']}")
-
-            # Ejecutamos el INSERT
-            # Nota: .execute() en la librería de Supabase ya devuelve los datos insertados
+            print(f"📡 [DB_SYNC]: Reintentando persistencia con columna 'password'...")
+            
+            # Ejecución del protocolo de inserción
             response = self.db.table(self.table).insert(payload).execute()
             
             if response.data and len(response.data) > 0:
-                print(f"🗄️ [DB_SUCCESS]: Operativo {payload['email']} persistido con éxito en el Nodo Central.")
+                print(f"🗄️ [DB_SUCCESS]: Operativo {payload['email']} persistido con éxito.")
                 return User.from_db(response.data[0])
-            
-            print(f"⚠️ [DB_WARNING]: Inserción completada pero no se retornaron datos del operativo.")
+                
             return None
-
         except Exception as e:
-            # Captura de errores de clave duplicada o violación de integridad
-            print(f"❌ [AUTH_REPO_CREATE_ERROR]: Violación de protocolo en persistencia: {str(e)}")
+            print(f"❌ [AUTH_REPO_CREATE_ERROR]: Fallo en el esquema: {str(e)}")
             return None

@@ -6,7 +6,7 @@ import { useTheme } from '../context/ThemeContext';
 import { 
   Plus, ArrowLeft, Trash2, GripVertical, Tag, 
   Search, X, Save, Star, Lock, FileBarChart, Layers,
-  Mail // Ícono para el disparo del Adapter
+  Mail, GitGraph, Edit3 // GitGraph para Composite, Edit3 para Edición
 } from 'lucide-react';
 
 // Componentes
@@ -25,6 +25,9 @@ export default function KanbanBoard() {
     addTask, 
     moveTask, 
     cloneTask, 
+    deleteTask, // <--- PROTOCOLO DE PURGA SIN DAÑAR ESTRUCTURA
+    addSubtask, // <--- PROTOCOLO COMPOSITE (JERARQUÍAS)
+    updateTask, // <--- PROTOCOLO DE EDICIÓN (MUTACIÓN)
     exportProjectReport,
     notifyTaskByEmail // <--- CONSUMIMOS EL PROTOCOLO ADAPTER DINÁMICO
   } = useProjects();
@@ -34,6 +37,8 @@ export default function KanbanBoard() {
 
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [activeColumn, setActiveColumn] = useState('');
+  const [editingTask, setEditingTask] = useState(null); // <--- ESTADO PARA IDENTIFICAR EDICIÓN
+  const [parentTaskId, setParentTaskId] = useState(null); // <--- ESTADO PARA EL VÍNCULO JERÁRQUICO
   const [filters, setFilters] = useState({ search: '', priority: 'ALL', type: 'ALL' });
 
   const [savedFilters, setSavedFilters] = useState(() => {
@@ -99,13 +104,42 @@ export default function KanbanBoard() {
   };
 
   const openAddTask = (columnTitle) => {
+    setEditingTask(null); // Reseteamos modo edición
+    setParentTaskId(null); // Tarea raíz
     setActiveColumn(columnTitle);
+    setIsModalOpen(true);
+  };
+
+  // --- [NUEVA FUNCIÓN: DISPARAR EDICIÓN TÁCTICA] ---
+  const openEditTask = (task) => {
+    setParentTaskId(null);
+    setEditingTask(task); // Cargamos la unidad a mutar
+    setActiveColumn(task.status || 'POR HACER');
+    setIsModalOpen(true);
+  };
+
+  // --- [NUEVA FUNCIÓN: DISPARAR RAMIFICACIÓN COMPOSITE] ---
+  const openAddSubtask = (parentTask) => {
+    setEditingTask(null);
+    setParentTaskId(parentTask.id || parentTask.task_id);
+    setActiveColumn(parentTask.status || 'POR HACER');
     setIsModalOpen(true);
   };
 
   const onSaveTask = (data) => {
     const sanitizedAssignedTo = typeof data.assignedTo === 'object' ? data.assignedTo.email : data.assignedTo;
-    addTask(project.id, { ...data, assignedTo: sanitizedAssignedTo });
+    
+    if (editingTask) {
+      // SI HAY UN OBJETO EN EDICIÓN, DISPARAMOS PROTOCOLO DE MUTACIÓN
+      updateTask(project.id, editingTask.id || editingTask.task_id, { ...data, assignedTo: sanitizedAssignedTo });
+    } else if (parentTaskId) {
+      // SI HAY UN PARENT_ID, DISPARAMOS EL PROTOCOLO COMPOSITE
+      addSubtask(project.id, parentTaskId, { ...data, assignedTo: sanitizedAssignedTo });
+    } else {
+      // SI NO, ES UNA TAREA ESTÁNDAR
+      addTask(project.id, { ...data, assignedTo: sanitizedAssignedTo });
+    }
+    
     setIsModalOpen(false);
   };
 
@@ -200,6 +234,7 @@ export default function KanbanBoard() {
                 {columnTasks.map((task) => {
                   const isFocused = focusedTaskId === task.id || focusedTaskId === task.task_id;
                   const isBug = task.type === 'BUG';
+                  const isSubtask = !!task.parent_task; // <--- DETECCIÓN DE RAMA COMPOSITE
                   const taskRecipient = task.assignedTo || '?';
 
                   return (
@@ -208,50 +243,53 @@ export default function KanbanBoard() {
                       draggable 
                       onDragStart={(e) => onDragStart(e, task.id || task.task_id)}
                       className={`border p-5 rounded-[1.8rem] cursor-grab transition-all group relative overflow-hidden ${
-                        isFocused 
-                        ? 'border-indigo-600 ring-2 ring-indigo-500/20 scale-[1.03]' 
-                        : (isDarkMode ? 'bg-slate-800/40 border-slate-700/50' : 'bg-white border-slate-100 shadow-sm')
+                        isSubtask 
+                        ? `ml-6 scale-[0.96] border-dashed ${isDarkMode ? 'bg-slate-950/40 border-slate-700 shadow-none' : 'bg-slate-50 border-slate-200'}` 
+                        : (isFocused ? 'border-indigo-600 ring-2 ring-indigo-500/20 scale-[1.03]' : (isDarkMode ? 'bg-slate-800/40 border-slate-700/50' : 'bg-white border-slate-100 shadow-sm'))
                       } ${isBug ? 'border-l-4 border-l-rose-500' : ''}`}
                     >
                       {/* --- [TÚNEL DE ACCIONES RÁPIDAS] --- */}
-                      <div className="absolute top-4 right-4 flex gap-2 opacity-0 group-hover:opacity-100 transition-all translate-y-2 group-hover:translate-y-0 z-20">
+                      <div className="absolute top-4 right-4 flex gap-1 opacity-0 group-hover:opacity-100 transition-all translate-y-2 group-hover:translate-y-0 z-20">
                         
-                        {/* --- [TRIGGER ADAPTER: BOTÓN DE NOTIFICACIÓN DINÁMICA] --- */}
-                        <button 
-                          onClick={(e) => {
-                            e.preventDefault();
-                            e.stopPropagation();
-                            handleNotifyOperative(task.id || task.task_id, taskRecipient);
-                          }}
-                          className={`p-2 rounded-xl border transition-all shadow-xl ${
-                            isDarkMode 
-                            ? 'bg-slate-900 border-slate-700 text-amber-400 hover:bg-amber-500 hover:text-black' 
-                            : 'bg-white border-slate-200 text-amber-600 hover:bg-amber-500 hover:text-white shadow-sm'
-                          }`}
-                          title={`NOTIFICAR A ${taskRecipient.toUpperCase()} (ADAPTER)`}
-                        >
-                          <Mail size={12} />
+                        {/* --- [TRIGGER EDIT: BOTÓN DE MUTACIÓN] --- */}
+                        <button onClick={(e) => { e.preventDefault(); e.stopPropagation(); openEditTask(task); }}
+                          className={`p-1.5 rounded-lg border transition-all bg-white text-indigo-600 hover:bg-indigo-600 hover:text-white shadow-sm`} 
+                          title="EDITAR UNIDAD">
+                          <Edit3 size={11} />
                         </button>
 
-                        <button 
-                          onClick={(e) => {
-                            e.preventDefault();
-                            e.stopPropagation();
-                            if(window.confirm("🧬 ¿INICIAR PROTOCOLO DE CLONACIÓN PROTOTYPE?")) {
-                              cloneTask(project.id, task.id || task.task_id);
-                            }
-                          }}
-                          className={`p-2 rounded-xl border transition-all shadow-xl ${
-                            isDarkMode 
-                            ? 'bg-slate-900 border-slate-700 text-indigo-400 hover:bg-indigo-600 hover:text-white' 
-                            : 'bg-white border-slate-200 text-indigo-600 hover:bg-indigo-600 hover:text-white shadow-sm'
-                          }`}
+                        {/* --- [TRIGGER COMPOSITE: AÑADIR RAMA HIJA] --- */}
+                        {!isSubtask && (
+                          <button onClick={(e) => { e.preventDefault(); e.stopPropagation(); openAddSubtask(task); }}
+                            className={`p-1.5 rounded-lg border transition-all bg-white text-emerald-600 hover:bg-emerald-500 hover:text-white shadow-sm`} 
+                            title="AÑADIR SUBTAREA (COMPOSITE)">
+                            <GitGraph size={11} />
+                          </button>
+                        )}
+
+                        <button onClick={(e) => { e.preventDefault(); e.stopPropagation(); handleNotifyOperative(task.id || task.task_id, taskRecipient); }}
+                          className={`p-1.5 rounded-lg border transition-all bg-white text-amber-400 hover:bg-amber-500 hover:text-white shadow-sm`}
+                          title={`NOTIFICAR A ${taskRecipient.toUpperCase()} (ADAPTER)`}
                         >
-                          <Layers size={12} />
+                          <Mail size={11} />
+                        </button>
+
+                        <button onClick={(e) => { e.preventDefault(); e.stopPropagation(); if(window.confirm("🧬 ¿INICIAR PROTOCOLO DE CLONACIÓN PROTOTYPE?")) cloneTask(project.id, task.id || task.task_id); }}
+                          className={`p-1.5 rounded-lg border transition-all bg-white text-indigo-400 shadow-sm`}>
+                          <Layers size={11} />
+                        </button>
+
+                        <button onClick={(e) => { e.preventDefault(); e.stopPropagation(); if(window.confirm("🧨 [PROTOCOL_CRITICAL]: ¿CONFIRMA LA ELIMINACIÓN PERMANENTE?")) deleteTask(project.id, task.id || task.task_id); }}
+                          className={`p-1.5 rounded-lg border transition-all bg-white text-rose-500 hover:bg-rose-600 hover:text-white shadow-sm`}
+                          title="PURGAR UNIDAD">
+                          <Trash2 size={11} />
                         </button>
                       </div>
 
-                      <div className="flex justify-between items-start mb-4">
+                      {/* CONECTOR VISUAL COMPOSITE */}
+                      {isSubtask && <div className="absolute -left-4 top-1/2 w-4 h-[1px] bg-slate-700/30"></div>}
+
+                      <div className="flex justify-between items-start mb-3">
                         <span className={`text-[8px] font-black px-2.5 py-1 rounded-lg border italic transition-colors ${
                           task.priority === 'URGENTE' || task.priority === 'URGENT' 
                           ? 'border-rose-500/40 text-rose-600 bg-rose-500/5' 
@@ -267,21 +305,23 @@ export default function KanbanBoard() {
                         )}
                       </div>
                       
-                      <h4 className={`font-bold text-xs uppercase italic mb-6 leading-relaxed transition-colors pr-8 ${theme.textMain}`}>
+                      <h4 className={`font-bold uppercase italic leading-tight transition-colors pr-8 ${isSubtask ? 'text-[10px]' : 'text-xs mb-4'} ${theme.textMain}`}>
                         {task.title}
                       </h4>
                       
-                      <div className={`flex items-center justify-between border-t pt-4 transition-colors ${isDarkMode ? 'border-slate-700/30' : 'border-slate-50'}`}>
-                        <div className={`flex items-center gap-2 text-[9px] font-black uppercase tracking-tighter ${theme.textSecondary}`}>
-                          <Tag size={10} className={isBug ? "text-rose-500" : "text-indigo-600"} />
-                          {task.type}
+                      {!isSubtask && (
+                        <div className={`flex items-center justify-between border-t pt-4 transition-colors ${isDarkMode ? 'border-slate-700/30' : 'border-slate-50'}`}>
+                          <div className={`flex items-center gap-2 text-[9px] font-black uppercase tracking-tighter ${theme.textSecondary}`}>
+                            <Tag size={10} className={isBug ? "text-rose-500" : "text-indigo-600"} />
+                            {task.type}
+                          </div>
+                          <div className={`w-7 h-7 rounded-full flex items-center justify-center text-[9px] font-black uppercase italic shadow-sm ${
+                              isDarkMode ? 'bg-slate-950 text-indigo-400' : 'bg-slate-900 text-white'
+                          }`}>
+                              {taskRecipient.charAt(0).toUpperCase()}
+                          </div>
                         </div>
-                        <div className={`w-7 h-7 rounded-full flex items-center justify-center text-[9px] font-black uppercase italic shadow-sm ${
-                            isDarkMode ? 'bg-slate-950 text-indigo-400' : 'bg-slate-900 text-white'
-                        }`}>
-                            {taskRecipient.charAt(0).toUpperCase()}
-                        </div>
-                      </div>
+                      )}
                     </div>
                   );
                 })}
@@ -298,6 +338,8 @@ export default function KanbanBoard() {
         projectMembers={modalMembers}
         initialStatus={activeColumn}
         allTasks={tasks}
+        taskToEdit={editingTask} // <--- DATOS PARA EL MODO EDICIÓN
+        isSubtask={!!parentTaskId} // <--- INDICADOR JERÁRQUICO
       />
     </div>
   );

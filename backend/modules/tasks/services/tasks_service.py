@@ -48,10 +48,11 @@ class TaskService(ITaskService):
         Asegura que user_id sea un UUID válido y mapea estados del Kanban.
         """
         # Estas son las únicas columnas que existen en tu esquema de Supabase
+        # SE AÑADE 'assigned_to' PARA SOPORTE DE ADAPTER DINÁMICO Y EDICIÓN
         allowed_db_columns = [
             "id", "title", "description", "status", 
             "priority", "user_id", "due_date", "type", 
-            "column_id", "position", "comments", "attachments"
+            "column_id", "position", "comments", "attachments", "assigned_to"
         ]
         
         clean_data = {}
@@ -137,10 +138,18 @@ class TaskService(ITaskService):
         print(f"📡 [ADAPTER_LINK]: Nuevo destino vinculado -> {notifier.__class__.__name__}")
         self.notifiers.append(notifier)
 
-    def _notify_all(self, title, message):
-        """Envía notificaciones masivas a través de los adaptadores registrados"""
+    def _notify_all(self, title, message, recipient=None):
+        """
+        Envía notificaciones masivas a través de los adaptadores registrados.
+        CORRECCIÓN: Soporte para 'recipient' dinámico (Email Real).
+        """
+        print(f"📢 [NOTIFY_BROADCAST]: {title} -> Destinatario: {recipient or 'Global'}")
         for notifier in self.notifiers:
-            notifier.send(title, message)
+            try:
+                # El adaptador ahora procesa el destinatario real del operativo
+                notifier.send(title, message, recipient)
+            except Exception as e:
+                print(f"⚠️ [ADAPTER_ERR]: {e}")
 
     # --- BRIDGE LOGIC: IMPLEMENTACIÓN BINARIA ---
     def generate_report(self, format_type="pdf"):
@@ -197,8 +206,8 @@ class TaskService(ITaskService):
         
         task = TaskFactory.from_dict(data)
         
-        # Disparo de notificación vía Adapters tras creación
-        self._notify_all("NUEVA_TAREA", f"Se ha creado la tarea: {task.title}")
+        # Disparo de notificación vía Adapters tras creación (Soporte dinámico)
+        self._notify_all("NUEVA_TAREA", f"Se ha creado la tarea: {task.title}", data.get('assigned_to'))
         
         return self.repository.create(self._clean_for_repo(task.to_dict()))
 
@@ -239,7 +248,7 @@ class TaskService(ITaskService):
         task_data["user_id"] = data.get("user_id")
         
         # Disparo de notificación vía Adapters tras construcción avanzada
-        self._notify_all("TAREA_AVANZADA", f"Creada con Builder: {task.title}")
+        self._notify_all("TAREA_AVANZADA", f"Creada con Builder: {task.title}", data.get('assigned_to'))
         
         return self.repository.create(self._clean_for_repo(task_data))
 
@@ -250,12 +259,24 @@ class TaskService(ITaskService):
         return TaskFactory.from_dict(data)
 
     def update_task(self, task_id, data):
+        """
+        PROTOCOL UPDATE: Sincroniza la mutación de la unidad con el Nodo Central.
+        CORRECCIÓN: Se inyecta la limpieza para asegurar compatibilidad Supabase.
+        """
         task = self.get_task(task_id)
         if not task:
             return None
-        return self.repository.update(task_id, self._clean_for_repo(data))
+        
+        print(f"🔄 [KERNEL_MUTATION]: Procesando cambios para unidad {task_id}")
+        
+        # Pasamos los datos por el filtro de limpieza (assignedTo -> assigned_to, etc.)
+        clean_data = self._clean_for_repo(data)
+        
+        return self.repository.update(task_id, clean_data)
 
     def delete_task(self, task_id):
+        """CORRECCIÓN: Implementación del borrado físico en el Nodo Central"""
+        print(f"🧨 [KERNEL_PURGE]: Solicitando eliminación definitiva de {task_id}")
         return self.repository.delete(task_id)
 
     def move_task(self, task_id, column_id):
@@ -268,8 +289,8 @@ class TaskService(ITaskService):
         task.column_id = column_id
         task.history.append(f"LOG: Movido de col_{old_column} a col_{column_id} en {datetime.now().isoformat()}")
         
-        # Notificación de movimiento
-        self._notify_all("MOVIMIENTO_TAREA", f"Unidad {task_id} movida a {column_id}")
+        # Notificación de movimiento dirigida al operativo
+        self._notify_all("MOVIMIENTO_TAREA", f"Unidad {task_id} movida a {column_id}", getattr(task, 'assigned_to', None))
         
         self.repository.update(task_id, self._clean_for_repo({"status": column_id}))
         return task.history
@@ -371,7 +392,7 @@ class TaskService(ITaskService):
             return None
         
         root_task = TaskFactory.from_dict(root_data)
-        all_tasks = self.repository.get_all()
+        all_tasks = self.get_all_tasks()
         children_data = [t for t in all_tasks if t.get("parent_task") == task_id]
         
         for child_data in children_data:
@@ -391,6 +412,8 @@ class TaskService(ITaskService):
         
         decorated_task = EmergencyDecorator(task)
         task.history.append(f"DECORATOR_LOG: Tarea elevada a EMERGENCIA el {datetime.now().isoformat()}")
-        self._notify_all("ALERTA_CRITICA", f"La tarea {task_id} ha sido marcada como EMERGENCIA.")
+        
+        # Notificación con destinatario real
+        self._notify_all("ALERTA_CRITICA", f"La tarea {task_id} ha sido marcada como EMERGENCIA.", getattr(task, 'assigned_to', None))
         
         return self.repository.update(task_id, self._clean_for_repo(decorated_task.to_dict()))

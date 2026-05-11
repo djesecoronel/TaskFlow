@@ -145,7 +145,6 @@ export const ProjectProvider = ({ children }) => {
     console.log(`%c 📧 [ADAPTER_COMMAND]: Solicitando notificación para ${recipientEmail} `, "background: #f59e0b; color: black; font-weight: bold; padding: 3px; border-radius: 4px;");
     
     try {
-      // Enviamos el ID y el correo real del destinatario al backend
       await axios.post(`${API_URL}/tasks/test-notifications`, {
         task_id: taskId,
         recipient: recipientEmail,
@@ -288,6 +287,79 @@ export const ProjectProvider = ({ children }) => {
     }
   };
 
+  // --- [PROTOCOLO DE ACTUALIZACIÓN: MUTACIÓN DE NODO] ---
+  const updateTask = async (projectId, taskId, updatedData) => {
+    saveSnapshot();
+    console.log(`%c 🔄 [MUTATION_INIT]: Actualizando unidad ${taskId}... `, "color: #6366f1; font-weight: bold;");
+
+    try {
+      // Sincronización con el Nodo Central vía PUT
+      const response = await axios.put(`${API_URL}/tasks/${taskId}`, updatedData);
+      const synchronizedTask = response.data;
+
+      setProjects(prev => prev.map(proj => {
+        if (proj.id === String(projectId)) {
+          const updatedTasks = proj.tasks.map(t => 
+            (t.id === taskId || t.task_id === taskId) ? synchronizedTask : t
+          );
+          return { 
+            ...proj, 
+            tasks: updatedTasks,
+            progress: calculateProgress(updatedTasks),
+            auditLog: [createAuditEntry('ACTUALIZACION DB', synchronizedTask.title), ...(proj.auditLog || [])]
+          };
+        }
+        return proj;
+      }));
+
+      addNotification('SUCCESS', `Nodo ${synchronizedTask.title} actualizado`);
+    } catch (error) {
+      console.error("❌ [MUTATION_SYNC_ERROR]:", error);
+      addNotification('ERROR', 'Fallo en la mutación de unidad');
+    }
+  };
+
+  // --- [PATRÓN COMPOSITE: PROTOCOLO DE RAMIFICACIÓN JERÁRQUICA] ---
+  const addSubtask = async (projectId, parentId, subtaskData) => {
+    saveSnapshot();
+    const currentUserId = user?.id || user?.user_id;
+
+    console.log(`%c 🌿 [COMPOSITE_INIT]: Ramificando subtarea bajo nodo padre ${parentId}... `, "color: #10b981; font-weight: bold;");
+
+    try {
+      // 1. Preparación de unidad de trabajo (Composite Branch)
+      const payload = {
+        ...subtaskData,
+        user_id: currentUserId,
+        project_id: projectId
+      };
+
+      // 2. Disparo de enlace al Nodo Central (Ruta Composite)
+      const response = await axios.post(`${API_URL}/tasks/${parentId}/subtask`, payload);
+      const savedSubtask = response.data;
+
+      // 3. Sincronización del Nodo Maestro local
+      setProjects(prev => prev.map(proj => {
+        if (proj.id === String(projectId)) {
+          const updatedTasks = [...(proj.tasks || []), savedSubtask];
+          safeNotify('COMPOSITE', `Subtarea Anclada: ${savedSubtask.title}`, savedSubtask.id);
+          return { 
+            ...proj, 
+            tasks: updatedTasks,
+            progress: calculateProgress(updatedTasks),
+            auditLog: [createAuditEntry('NUEVA SUBTAREA', savedSubtask.title), ...(proj.auditLog || [])]
+          };
+        }
+        return proj;
+      }));
+
+      addNotification('SUCCESS', 'COMPOSITE: Subtarea ramificada con éxito');
+    } catch (error) {
+      console.error("❌ [COMPOSITE_SYNC_ERROR]:", error);
+      addNotification('ERROR', 'Error en el protocolo de jerarquías');
+    }
+  };
+
   const moveTask = async (projectId, taskId, newStatus) => {
     saveSnapshot();
     try {
@@ -320,28 +392,25 @@ export const ProjectProvider = ({ children }) => {
   };
 
   const deleteTask = async (projectId, taskId) => {
-    if (!window.confirm("¿CONFIRMA ELIMINACIÓN DE TAREA EN DB?")) return;
-    saveSnapshot();
-    try {
-      await axios.delete(`${API_URL}/tasks/${taskId}`);
+      console.log(`%c 💣 [CONTEXT_PURGE]: Iniciando secuencia para tarea ${taskId}... `, "color: #f43f5e; font-weight: bold;");
       
-      setProjects(prev => prev.map(proj => {
-        if (proj.id === String(projectId)) {
-          const taskToDelete = proj.tasks.find(t => (t.id === taskId || t.task_id === taskId));
-          const updatedTasks = proj.tasks.filter(t => (t.id !== taskId && t.task_id !== taskId));
-          safeNotify('SYSTEM', `Tarea purgada`, taskId);
-          return { 
-            ...proj, 
-            tasks: updatedTasks, 
-            progress: calculateProgress(updatedTasks),
-            auditLog: [createAuditEntry('ELIMINACION DB', taskToDelete?.title || 'Tarea'), ...(proj.auditLog || [])]
-          };
-        }
-        return proj;
-      }));
-    } catch (error) {
-      console.error("DELETE_SYNC_ERROR", error);
-    }
+      saveSnapshot(); 
+
+      try {
+        await axios.delete(`http://192.168.40.53:5000/api/tasks/${taskId}`);
+
+        setProjects(prev => prev.map(p => {
+          if (String(p.id) === String(projectId)) {
+            return { ...p, tasks: p.tasks.filter(t => (t.id || t.task_id) !== taskId) };
+          }
+          return p;
+        }));
+
+        console.log("✅ [CONTEXT_SUCCESS]: Unidad purgada en el Nodo Central.");
+      } catch (error) {
+        console.error("❌ [CONTEXT_ERROR]: La base de datos rechazó la purga.", error);
+        alert("No se pudo eliminar la tarea de la base de datos.");
+      }
   };
 
   const cloneTask = async (projectId, taskId) => {
@@ -386,6 +455,8 @@ export const ProjectProvider = ({ children }) => {
       undoLastAction, 
       historyLength: history.length,
       addTask, 
+      updateTask, // <--- EXPOSICIÓN DEL PROTOCOLO DE EDICIÓN
+      addSubtask, 
       moveTask, 
       deleteTask,
       cloneTask, 

@@ -3,110 +3,118 @@ from modules.tasks.services.tasks_service import TaskService
 
 class TaskServiceProxy(ITaskService):
     """
-    PATRÓN PROXY: Actúa como capa de control e intermediación del TaskService real.
+    🛡️ [PATRÓN PROXY]: CAPA DE BLINDAJE Y TELEMETRÍA.
     
-    Implementa auditoría de seguridad y logging de operaciones en tiempo real.
-    Garantiza que toda interacción con el Nodo Central sea registrada antes 
-    de ser procesada por el servicio de dominio.
+    Actúa como el Centinela del Nodo Central. No procesa lógica de negocio,
+    pero garantiza que toda operación del CORE_COMMAND sea auditada,
+    validada y registrada antes de tocar el RealSubject (TaskService).
     """
 
     def __init__(self, repository):
-        # El Proxy orquestra la instanciación del servicio real (RealSubject)
+        # Instanciación controlada del servicio de dominio
         self._real_service = TaskService(repository)
 
-    # --- [PROTOCOLO DE AUDITORÍA INTERNA] ---
+    # --- [PROTOCOLO DE TELEMETRÍA DE KERNEL] ---
 
-    def _log_access(self, action: str):
+    def _log_access(self, action: str, details: str = "N/A"):
         """
-        LOGGING DE KERNEL: Registra en consola cada intento de acceso al sistema.
-        Mantiene la trazabilidad de las operaciones del CORE_COMMAND.
+        REGISTRO DE MISIÓN: Estampa una marca de tiempo y acción en el log del sistema.
         """
-        print(f"🔍 [PROXY_LOG]: Operación '{action}' detectada y autorizada.")
+        header = f"🔍 [PROXY_AUDIT]"
+        print(f"{header} %c OPERACIÓN: {action.upper()} ", "background: #1e293b; color: #818cf8; font-weight: bold;")
+        if details != "N/A":
+            print(f"{header} %c DETALLES: {details} ", "color: #94a3b8; italic;")
 
     # --- [IMPLEMENTACIÓN DEL CONTRATO ITaskService] ---
 
     def create_task(self, data):
-        self._log_access("CREAR_TAREA")
+        self._log_access("CREATE_UNIT", f"Título: {data.get('title')}")
         return self._real_service.create_task(data)
 
     def create_advanced_task(self, data):
-        self._log_access("CREAR_TAREA_AVANZADA (BUILDER)")
+        self._log_access("BUILDER_SEQUENCE", "Iniciando construcción de unidad compleja")
         return self._real_service.create_advanced_task(data)
 
     def get_task(self, task_id):
-        self._log_access(f"OBTENER_DETALLE_UNIDAD: {task_id}")
+        self._log_access("READ_UNIT", f"ID: {task_id}")
         return self._real_service.get_task(task_id)
 
     def get_all_tasks(self):
-        self._log_access("OBTENER_TODAS_LAS_UNIDADES")
+        self._log_access("SYNC_ALL", "Sincronizando base de datos completa")
         return self._real_service.get_all_tasks()
 
     def update_task(self, task_id, data):
-        self._log_access(f"ACTUALIZAR_UNIDAD: {task_id}")
+        self._log_access("UPDATE_UNIT", f"ID: {task_id}")
         return self._real_service.update_task(task_id, data)
 
     def delete_task(self, task_id):
-        self._log_access(f"ELIMINAR_UNIDAD (PURGA): {task_id}")
+        """
+        Protocolo de Purga: El Proxy registra la destrucción de datos.
+        """
+        self._log_access("PURGE_UNIT", f"ID_DESTRUIDO: {task_id}")
+        print(f"⚠️ [PROXY_CRITICAL]: Se ha solicitado la eliminación permanente del nodo {task_id}")
         return self._real_service.delete_task(task_id)
 
     def move_task(self, task_id, column_id):
-        self._log_access(f"MOVIMIENTO_KANBAN: Unidad {task_id} -> {column_id}")
+        self._log_access("KANBAN_SHIFT", f"Unidad {task_id} -> {column_id}")
         return self._real_service.move_task(task_id, column_id)
 
     def add_comment(self, task_id, comment):
-        self._log_access(f"REGISTRO_COMENTARIO en Unidad: {task_id}")
+        self._log_access("AUDIT_COMMENT", f"En unidad {task_id}")
         return self._real_service.add_comment(task_id, comment)
 
     def add_time_log(self, task_id, hours):
-        self._log_access(f"REGISTRO_CARGA_HORARIA ({hours}h) en Unidad: {task_id}")
+        self._log_access("METRIC_LOG", f"Carga: {hours}h en unidad {task_id}")
         return self._real_service.add_time_log(task_id, hours)
 
     def add_attachment(self, task_id, file):
-        self._log_access(f"ANEXAR_RECURSO en Unidad: {task_id}")
+        self._log_access("RESOURCES_ATTACH", f"Anexo en unidad {task_id}")
         return self._real_service.add_attachment(task_id, file)
 
     def clone_task(self, task_id):
-        self._log_access(f"CLONACIÓN_PROTOTYPE: Duplicando Unidad {task_id}")
+        """
+        Intercepción de Prototipo: Registra la duplicación de ADN de la tarea.
+        """
+        self._log_access("PROTOTYPE_CLONE", f"Duplicando arquitectura de unidad {task_id}")
         return self._real_service.clone_task(task_id)
 
     def get_deadline_hours(self, task_id):
-        # Operación de lectura de métricas
+        # Lectura pasiva de métricas
         return self._real_service.get_deadline_hours(task_id)
 
-    # --- [INTERCEPCIÓN DE ABSTRACT FACTORY VISUAL] ---
+    # --- [VISUAL INTERCEPTION] ---
 
     def set_theme(self, theme_name):
-        """
-        Intercepción de Protocolo Visual: El Proxy audita el cambio 
-        estético antes de delegar al Abstract Factory del Kernel.
-        """
-        self._log_access(f"CAMBIO_PROTOCOLO_VISUAL: Switch a modo {theme_name}")
+        self._log_access("VISUAL_OVERRIDE", f"Aplicando protocolo estético {theme_name}")
         return self._real_service.set_theme(theme_name)
 
     # --- [ADAPTERS & NOTIFICATIONS] ---
 
     def add_notifier(self, notifier):
+        print(f"🔌 [PROXY_LINK]: Acoplando adaptador de notificación: {type(notifier).__name__}")
         return self._real_service.add_notifier(notifier)
 
     def _notify_all(self, title, message):
+        """Auditoría de Broadcast: El Proxy vigila las comunicaciones externas."""
+        self._log_access("BROADCAST_SIGNAL", f"Canal de Alerta: {title}")
         return self._real_service._notify_all(title, message)
 
-    # --- [BRIDGE & ESTRUCTURALES] ---
+    # --- [STRUCTURAL PATTERNS] ---
 
     def generate_report(self, format_type):
-        """Auditoría de generación de reportes vía Bridge"""
-        self._log_access(f"GENERACIÓN_REPORTE: Formato {format_type.upper()}")
+        """Bridge Auditor: Registra la exportación de inteligencia."""
+        self._log_access("BRIDGE_EXPORT", f"Formato binario: {format_type.upper()}")
         return self._real_service.generate_report(format_type)
 
     def add_subtask(self, parent_id, subtask_data):
-        """Auditoría de jerarquías Composite"""
-        self._log_access(f"VINCULACIÓN_COMPOSITE (SUBTAREA) al Padre: {parent_id}")
+        """Composite Auditor: Registra la expansión del árbol jerárquico."""
+        self._log_access("COMPOSITE_BUILD", f"Nueva rama en Nodo Padre: {parent_id}")
         return self._real_service.add_subtask(parent_id, subtask_data)
 
     def get_task_tree(self, task_id):
         return self._real_service.get_task_tree(task_id)
 
     def make_emergency_task(self, task_id):
-        """Auditoría de Decoración Dinámica"""
-        self._log_access(f"APLICACIÓN_DECORADOR_EMERGENCIA: Unidad {task_id}")
+        """Decorator Auditor: Registra la mutación dinámica de la unidad."""
+        self._log_access("DECORATOR_MUTATION", f"Unidad {task_id} elevada a EMERGENCIA")
         return self._real_service.make_emergency_task(task_id)

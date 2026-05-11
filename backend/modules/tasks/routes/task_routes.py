@@ -185,11 +185,18 @@ class Task(Resource):
         return serialize_task(task), 200
 
     def delete(self, id):
-        """Proxy Security: Eliminación controlada del sistema"""
-        success = service.delete_task(id)
-        if not success:
-            return {"error": "FALLO_ELIMINACION_O_ACCESO"}, 404
-        return {"message": "SISTEMA_DEPURADO", "id": id}, 200
+        """
+        ENDPOINT DE PURGA: Recibe la señal del Front y ordena la destrucción.
+        CORRECCIÓN: Nombre de argumento sincronizado con la ruta para evitar TypeError.
+        """
+        print(f"🧨 [ROUTE_DELETE]: Solicitud de purga para unidad {id}")
+        
+        # Llamamos al Proxy (que luego llama al Service y al Repo)
+        result = service.delete_task(id)
+        
+        if result:
+            return {"message": "PURGE_COMPLETE", "id": id}, 200
+        return {"message": "PURGE_FAILED"}, 400
 
 # --- OPERACIONES ESPECÍFICAS (COMPOSITE / DECORATOR / KANBAN) ---
 
