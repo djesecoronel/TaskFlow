@@ -1,4 +1,4 @@
-from flask import request
+from flask import request, send_file
 from flask_restx import Namespace, Resource, fields
 from modules.tasks.services.tasks_service import TaskService
 from modules.tasks.repository.task_repository import TaskRepository
@@ -15,7 +15,6 @@ task_ns = Namespace('tasks', description='OPERACIONES DE TAREAS - CORE_COMMAND')
 repository = TaskRepository()
 
 # 2. Patrón Proxy: Único punto de contacto para las rutas.
-# Maneja internamente al TaskService real para auditoría y validación.
 service = TaskServiceProxy(repository) 
 
 # 3. Patrón Adapter: Registro de notificadores externos
@@ -52,7 +51,13 @@ report_model = task_ns.model('ReportRequest', {
     'format': fields.String(required=True, example="pdf", description="Opciones: pdf, excel")
 })
 
-# Cambiamos column_id a String para soportar los títulos de las columnas del Kanban
+# Modelo extendido para el Adapter Dinámico
+notification_test_model = task_ns.model('NotificationRequest', {
+    'task_id': fields.String(example="uuid-123", description="ID de la tarea a notificar"),
+    'recipient': fields.String(example="operativo@taskflow.com", description="Email del asignado"),
+    'trigger': fields.String(example="MANUAL_ADAPTER_COMMAND")
+})
+
 move_model = task_ns.model('MoveTask', {'column_id': fields.String(required=True, example="En progreso")})
 comment_model = task_ns.model('Comment', {'comment': fields.String(required=True, example="Needs review")})
 time_model = task_ns.model('TimeLog', {'hours': fields.Float(required=True, example=3.5)})
@@ -76,8 +81,6 @@ class TaskTheme(Resource):
         """Abstract Factory: Cambiar Tema Global del Sistema"""
         data = request.json
         theme_val = data.get('theme')
-        
-        # Log de entrada en ruta
         print(f"📡 [ROUTE_IN]: Petición de tema recibida: {theme_val}")
         return service.set_theme(theme_val), 200
     
@@ -85,16 +88,54 @@ class TaskTheme(Resource):
 class TaskReportResource(Resource):
     @task_ns.expect(report_model)
     def post(self):
-        """Patrón Bridge: Generar Reporte desacoplada (PDF/Excel) vía Proxy"""
+        """Patrón Bridge: Generar Reporte binario (PDF/Excel) vía Proxy"""
         data = request.json
-        return service.generate_report(data.get('format', 'pdf')), 200
+        format_type = data.get('format', 'pdf').lower()
+        print(f"🌉 [BRIDGE_ROUTING]: Solicitando implementación en formato {format_type.upper()}")
+        
+        report_data = service.generate_report(format_type)
+        if not report_data:
+            return {"error": "FALLO_GENERACION_REPORTE"}, 500
+
+        mimetypes = {
+            'pdf': 'application/pdf',
+            'excel': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+        }
+
+        return send_file(
+            report_data,
+            mimetype=mimetypes.get(format_type, 'application/pdf'),
+            as_attachment=True,
+            download_name=f"TaskFlow_Report.{format_type}"
+        )
 
 @task_ns.route('/test-notifications')
 class TestNotification(Resource):
+    @task_ns.expect(notification_test_model)
     def post(self):
-        """Patrón Adapter: Probar conexión con servicios de terceros"""
-        service._notify_all("SISTEMA_OPERATIVO", "Prueba de conexión exitosa.")
-        return {"status": "NOTIFICACIONES_PROCESADAS", "active_adapters": 2}, 200
+        """Patrón Adapter: Disparo de notificación dinámica y dirigida vía UI"""
+        data = request.json
+        task_id = data.get('task_id')
+        recipient = data.get('recipient', 'ADMIN_SISTEMA')
+        
+        print(f"📡 [ADAPTER_ROUTE]: Protocolo de notificación iniciado para: {recipient}")
+        
+        # Construcción del mensaje dinámico extrayendo datos de la tarea
+        message = "Prueba de conexión exitosa."
+        if task_id:
+            task = service.get_task(task_id)
+            if task:
+                message = f"ALERTA OPERATIVA: La unidad '{task.title}' requiere su atención inmediata."
+        
+        # Disparo a través del motor Adapter (Broadcast)
+        # Nota: Los adaptadores recibirán este mensaje y el contexto del destinatario
+        service._notify_all(f"ALERTA TASKFLOW: {recipient}", message)
+        
+        return {
+            "status": "NOTIFICACIONES_PROCESADAS", 
+            "target_operative": recipient,
+            "active_adapters": 2
+        }, 200
 
 # --- ENDPOINTS: CRUD PRINCIPAL (AUDITADOS POR PROXY) ---
 
@@ -123,7 +164,7 @@ class AdvancedTask(Resource):
             return {"error": "FALLO_CREACION_AVANZADA"}, 400
         return serialize_task(result), 201
 
-# --- [CIRUGÍA DE RUTAS: CAMBIO DE <INT> A <STRING> PARA SOPORTE UUID] ---
+# --- OPERACIONES UUID ---
 
 @task_ns.route('/<string:id>')
 class Task(Resource):
@@ -150,7 +191,7 @@ class Task(Resource):
             return {"error": "FALLO_ELIMINACION_O_ACCESO"}, 404
         return {"message": "SISTEMA_DEPURADO", "id": id}, 200
 
-# --- OPERACIONES ESPECÍFICAS (PATRONES ESTRUCTURALES ADICIONALES) ---
+# --- OPERACIONES ESPECÍFICAS (COMPOSITE / DECORATOR / KANBAN) ---
 
 @task_ns.route('/<string:id>/subtask')
 class SubtaskResource(Resource):
@@ -185,9 +226,8 @@ class EmergencyTaskResource(Resource):
 class MoveTask(Resource):
     @task_ns.expect(move_model)
     def post(self, id):
-        """Kanban Logic: Movimiento entre columnas de estado (Soporte UUID)"""
+        """Kanban Logic: Movimiento entre columnas de estado"""
         data = request.json
-        # Delegamos al service.move_task que ya maneja la traducción de Enums
         task = service.move_task(id, data["column_id"])
         if not task:
             return {"error": "ERROR_MOVIMIENTO_NODO_CENTRAL"}, 404
@@ -197,7 +237,7 @@ class MoveTask(Resource):
 class CommentTask(Resource):
     @task_ns.expect(comment_model)
     def post(self, id):
-        """Registro de Auditoría: Añadir comentarios a la tarea"""
+        """Registro de Auditoría: Añadir comentarios"""
         data = request.json
         task = service.add_comment(id, data["comment"])
         if not task:

@@ -103,41 +103,59 @@ export const ProjectProvider = ({ children }) => {
     console.log(`%c 🌉 [BRIDGE_REPORT]: Iniciando protocolo de descarga en formato ${format.toUpperCase()}... `, "background: #10b981; color: white; padding: 3px; border-radius: 4px;");
     
     try {
-      // Disparo al endpoint Bridge del backend
       const response = await axios({
         url: `${API_URL}/tasks/report`,
         method: 'POST',
         data: { format: format.toLowerCase() },
-        responseType: 'blob', // REQUERIDO: Para manejar el binario del PDF/Excel
+        responseType: 'blob', 
       });
 
-      // Crear el túnel de descarga en el navegador
+      const fileExtension = format.toLowerCase() === 'excel' ? 'xlsx' : 'pdf';
+
       const blobUrl = window.URL.createObjectURL(new Blob([response.data]));
       const downloadLink = document.createElement('a');
       downloadLink.href = blobUrl;
       
       const timestamp = new Date().toISOString().split('T')[0];
-      downloadLink.setAttribute('download', `REPORT_TASKFLOW_${timestamp}.${format}`);
+      downloadLink.setAttribute('download', `REPORT_TASKFLOW_${timestamp}.${fileExtension}`);
       
       document.body.appendChild(downloadLink);
       downloadLink.click();
       
-      // Limpieza de recursos de memoria
       downloadLink.remove();
       window.URL.revokeObjectURL(blobUrl);
 
-      addNotification('SUCCESS', `Bridge: Reporte ${format.toUpperCase()} descargado con éxito`);
+      addNotification('SUCCESS', `Bridge: Reporte ${fileExtension.toUpperCase()} descargado con éxito`);
       
       setProjects(prev => prev.map(p => 
         p.id === String(projectId) ? { 
           ...p, 
-          auditLog: [createAuditEntry('EXPORT', format), ...(p.auditLog || [])] 
+          auditLog: [createAuditEntry('EXPORT', fileExtension), ...(p.auditLog || [])] 
         } : p
       ));
 
     } catch (error) {
       console.error("❌ [BRIDGE_SYNC_ERROR]:", error);
       addNotification('ERROR', 'Error en la implementación del Bridge de reportes');
+    }
+  };
+
+  // --- [PATRÓN ADAPTER: DISPARO DE NOTIFICACIÓN DINÁMICA] ---
+  const notifyTaskByEmail = async (taskId, recipientEmail) => {
+    console.log(`%c 📧 [ADAPTER_COMMAND]: Solicitando notificación para ${recipientEmail} `, "background: #f59e0b; color: black; font-weight: bold; padding: 3px; border-radius: 4px;");
+    
+    try {
+      // Enviamos el ID y el correo real del destinatario al backend
+      await axios.post(`${API_URL}/tasks/test-notifications`, {
+        task_id: taskId,
+        recipient: recipientEmail,
+        trigger: "MANUAL_ADAPTER_COMMAND"
+      });
+      
+      addNotification('SUCCESS', `ADAPTER: Protocolo enviado a ${recipientEmail}`);
+    } catch (error) {
+      console.error("❌ [ADAPTER_SYNC_ERROR]:", error);
+      addNotification('ERROR', 'Error en el túnel de notificación');
     }
   };
 
@@ -326,10 +344,8 @@ export const ProjectProvider = ({ children }) => {
     }
   };
 
-  // --- [PATRÓN PROTOTYPE: MOTOR DE REPLICACIÓN DE UNIDADES] ---
   const cloneTask = async (projectId, taskId) => {
     saveSnapshot(); 
-    
     console.log(`%c 🧬 [PROTOTYPE_INIT]: Clonando UUID -> ${taskId}`, "color: #a855f7; font-weight: bold;");
 
     try {
@@ -373,7 +389,8 @@ export const ProjectProvider = ({ children }) => {
       moveTask, 
       deleteTask,
       cloneTask, 
-      exportProjectReport, // EXPOSICIÓN DE LA ABSTRACCIÓN BRIDGE
+      exportProjectReport, 
+      notifyTaskByEmail, 
       syncThemeWithBackend, 
       updateColumns: (projectId, newColumns) => {
         setProjects(prev => prev.map(proj => 

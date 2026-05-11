@@ -27,17 +27,15 @@ export const AuthProvider = ({ children }) => {
         const savedUser = localStorage.getItem('tf_user');
         
         if (token && savedUser) {
-          // Bloque de seguridad: validamos que el JSON sea íntegro
           try {
             const parsedUser = JSON.parse(savedUser);
             setUser(parsedUser);
             axios.defaults.headers.common['Authorization'] = `Bearer ${token}`;
-            console.log("KERNEL_AUTH: Identidad restaurada desde memoria local.");
+            console.log("%c KERNEL_AUTH: Identidad restaurada desde memoria local. ", "color: #10b981; font-weight: bold;");
           } catch (e) {
             throw new Error("DATA_CORRUPTION");
           }
         } else {
-          // Si no hay sesión, aseguramos limpieza de cabeceras
           delete axios.defaults.headers.common['Authorization'];
           setUser(null);
         }
@@ -54,48 +52,70 @@ export const AuthProvider = ({ children }) => {
 
   // --- [AUTH ACTIONS: CONNECTING TO REALITY] ---
   
+  // 1. PROTOCOLO DE ACCESO (LOGIN)
   const login = useCallback(async (credentials) => {
     try {
-      console.log("KERNEL_AUTH: Iniciando secuencia de apretón de manos...");
+      console.log("%c KERNEL_AUTH: Iniciando secuencia de apretón de manos... ", "color: #818cf8; font-weight: bold;");
       
       const response = await axios.post(`${API_URL}/login`, {
         email: credentials.email,
         password: credentials.password
       });
 
-      // Extraemos la data validada por el servidor con fallback de seguridad
       const { user: realUser, token } = response.data;
-
       if (!token) throw new Error("PROTOCOL_ERROR: Token no recibido");
 
-      // Inyectamos token en axios para peticiones inmediatas
       axios.defaults.headers.common['Authorization'] = `Bearer ${token}`;
-
-      // Persistencia en el núcleo del sistema
       setUser(realUser);
       localStorage.setItem('tf_token', token);
       localStorage.setItem('tf_user', JSON.stringify(realUser));
       
-      console.log(`KERNEL_AUTH: Acceso concedido para operativo -> ${realUser.email}`);
+      console.log(`%c KERNEL_AUTH: Acceso concedido para operativo -> ${realUser.email} `, "color: #10b981; font-weight: bold;");
       return response.data;
 
     } catch (error) {
       console.error("AUTH_DENIED: Credenciales rechazadas por el Nodo.");
-      localStorage.removeItem('tf_token');
-      localStorage.removeItem('tf_user');
-      delete axios.defaults.headers.common['Authorization'];
       throw error;
     }
   }, []);
 
+  // 2. PROTOCOLO DE REGISTRO (REGISTER) - [INYECCIÓN DE MISIÓN CRÍTICA]
+  const register = useCallback(async (formData) => {
+    try {
+      console.log("%c 🧬 KERNEL_AUTH: Desplegando nuevo operativo en el Nodo... ", "color: #f59e0b; font-weight: bold;");
+      
+      const response = await axios.post(`${API_URL}/register`, {
+        email: formData.email,
+        password: formData.password,
+        name: formData.name,
+        role: formData.role || 'DEVELOPER'
+      });
+
+      const { user: newUser, token } = response.data;
+
+      if (token) {
+        axios.defaults.headers.common['Authorization'] = `Bearer ${token}`;
+        setUser(newUser);
+        localStorage.setItem('tf_token', token);
+        localStorage.setItem('tf_user', JSON.stringify(newUser));
+        console.log(`%c ✅ KERNEL_AUTH: Operativo ${newUser.email} registrado y sincronizado. `, "color: #10b981; font-weight: bold;");
+      }
+
+      return response.data;
+    } catch (error) {
+      console.error("❌ KERNEL_AUTH: Error en protocolo de registro.", error.response?.data || error.message);
+      throw error;
+    }
+  }, []);
+
+  // 3. PURGA DE SESIÓN (LOGOUT)
   const logout = useCallback(() => {
-    // Purga física de credenciales del sistema
     localStorage.removeItem('tf_user');
     localStorage.removeItem('tf_token');
     localStorage.removeItem('tf_projects');
     delete axios.defaults.headers.common['Authorization'];
     setUser(null);
-    console.log("KERNEL_AUTH: Sesión finalizada. Memoria de acceso purgada.");
+    console.log("%c KERNEL_AUTH: Sesión finalizada. Memoria de acceso purgada. ", "color: #ef4444; font-weight: bold;");
   }, []);
 
   const updateProfile = useCallback((newData) => {
@@ -111,6 +131,7 @@ export const AuthProvider = ({ children }) => {
     <AuthContext.Provider value={{ 
       user, 
       login, 
+      register, // <--- EXPOSICIÓN DE LA NUEVA FUNCIÓN
       logout, 
       updateProfile, 
       loading,

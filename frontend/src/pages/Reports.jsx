@@ -1,15 +1,19 @@
 import { useState, useMemo } from 'react';
 import { useProjects } from '../context/ProjectContext';
-import { useTheme } from '../context/ThemeContext'; // IMPORTAR TEMA
+import { useTheme } from '../context/ThemeContext'; 
 import { 
   PieChart, FileText, Clock, ChevronRight, Activity, Zap,
-  Layers, Target, ShieldCheck, Database, Filter, Download, TrendingUp, BarChart3
+  Layers, Target, ShieldCheck, Database, Filter, Download, TrendingUp, BarChart3,
+  FileBarChart, Save // Iconos para el Bridge
 } from 'lucide-react';
 
 export default function Reports() {
-  const { theme, isDarkMode } = useTheme(); // CONSUMIR TEMA
+  const { theme, isDarkMode } = useTheme(); 
   const projectContext = useProjects() || {};
-  const { projects = [] } = projectContext;
+  const { 
+    projects = [], 
+    exportProjectReport // <--- INYECTAMOS LA ABSTRACCIÓN BRIDGE
+  } = projectContext;
 
   const [activeFilter, setActiveFilter] = useState('ALL'); 
 
@@ -40,8 +44,15 @@ export default function Reports() {
     ];
   }, [efficiency]);
 
-  const handleExport = () => {
-    alert(`INICIANDO PROTOCOLO: GENERANDO REPORTE ${activeFilter === 'ALL' ? 'GLOBAL' : projectsToDisplay[0]?.name?.toUpperCase()}`);
+  // --- [PROTOCOLO BRIDGE: DISPARO DE IMPLEMENTACIÓN BINARIA] ---
+  const handleExportBridge = (format) => {
+    const targetId = activeFilter === 'ALL' ? "1" : activeFilter;
+    console.log(`%c 🌉 [BRIDGE_ROUTING]: Ejecutando descarga en ${format.toUpperCase()} para Nodo ${targetId} `, "background: #10b981; color: white; padding: 4px; border-radius: 4px;");
+    
+    // Invocamos el puente hacia el backend
+    if (typeof exportProjectReport === 'function') {
+      exportProjectReport(targetId, format);
+    }
   };
 
   return (
@@ -83,15 +94,28 @@ export default function Reports() {
             <ChevronRight size={16} className="absolute right-6 top-1/2 -translate-y-1/2 text-slate-700 rotate-90" />
           </div>
 
-          <button 
-            onClick={handleExport}
-            className={`w-full md:w-auto flex items-center justify-center gap-4 px-10 py-5 rounded-[1.5rem] font-black text-[10px] uppercase tracking-[0.2em] transition-all active:scale-95 group ${
-              isDarkMode ? 'bg-white text-black hover:bg-indigo-500 hover:text-white' : 'bg-slate-900 text-white hover:bg-black'
-            }`}
-          >
-            <Download size={18} className="group-hover:animate-bounce" />
-            Export_Audit_Full
-          </button>
+          {/* --- [INTERFACE BRIDGE: ACTIVACIÓN DE DESCARGAS BINARIAS] --- */}
+          <div className="flex gap-3 w-full md:w-auto">
+            <button 
+              onClick={() => handleExportBridge('pdf')}
+              className={`flex-1 md:flex-none flex items-center justify-center gap-4 px-8 py-5 rounded-[1.5rem] font-black text-[10px] uppercase tracking-[0.2em] transition-all active:scale-95 group ${
+                isDarkMode ? 'bg-white text-black hover:bg-rose-500 hover:text-white' : 'bg-slate-900 text-white hover:bg-rose-600'
+              }`}
+            >
+              <FileBarChart size={18} className="group-hover:animate-bounce" />
+              Audit_PDF
+            </button>
+
+            <button 
+              onClick={() => handleExportBridge('excel')}
+              className={`flex-1 md:flex-none flex items-center justify-center gap-4 px-8 py-5 rounded-[1.5rem] font-black text-[10px] uppercase tracking-[0.2em] transition-all active:scale-95 group ${
+                isDarkMode ? 'bg-white text-black hover:bg-emerald-500 hover:text-white' : 'bg-slate-900 text-white hover:bg-emerald-600'
+              }`}
+            >
+              <Save size={18} className="group-hover:animate-bounce" />
+              Audit_XLSX
+            </button>
+          </div>
         </div>
       </div>
 
@@ -121,11 +145,11 @@ export default function Reports() {
         <div className="xl:col-span-8">
           <div className={`border p-12 rounded-[4rem] shadow-2xl relative overflow-hidden group ${theme.card}`}>
             <div className="absolute top-0 right-0 p-12 opacity-[0.02]">
-               <TrendingUp size={200} className={isDarkMode ? 'text-white' : 'text-black'} />
+                <TrendingUp size={200} className={isDarkMode ? 'text-white' : 'text-black'} />
             </div>
             <div className="flex justify-between items-start mb-16 relative z-10">
               <div className="space-y-3">
-                 <h2 className={`text-4xl font-black uppercase italic tracking-tighter flex items-center gap-5 ${theme.textMain}`}>
+                  <h2 className={`text-4xl font-black uppercase italic tracking-tighter flex items-center gap-5 ${theme.textMain}`}>
                   <div className="w-2 h-10 bg-indigo-600 rounded-full"></div>
                   Team_Velocity
                 </h2>

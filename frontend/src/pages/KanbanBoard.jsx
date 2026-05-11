@@ -5,7 +5,8 @@ import { useAuth } from '../context/AuthContext';
 import { useTheme } from '../context/ThemeContext'; 
 import { 
   Plus, ArrowLeft, Trash2, GripVertical, Tag, 
-  Search, X, Save, Star, Lock, FileBarChart, Layers 
+  Search, X, Save, Star, Lock, FileBarChart, Layers,
+  Mail // Ícono para el disparo del Adapter
 } from 'lucide-react';
 
 // Componentes
@@ -21,13 +22,11 @@ export default function KanbanBoard() {
   // --- [CORE_COMMAND: INYECCIÓN DE LÓGICA DE PROYECTOS] ---
   const { 
     projects, 
-    updateColumns, 
     addTask, 
     moveTask, 
     cloneTask, 
-    exportProjectReport, // Inyectamos la Interfaz Bridge
-    inviteMember, 
-    removeMember 
+    exportProjectReport,
+    notifyTaskByEmail // <--- CONSUMIMOS EL PROTOCOLO ADAPTER DINÁMICO
   } = useProjects();
   
   const queryParams = new URLSearchParams(search);
@@ -70,10 +69,20 @@ export default function KanbanBoard() {
     return matchesSearch && matchesPriority && matchesType;
   });
 
-  // --- [PROTOCOLO BRIDGE: DISPARO DE IMPLEMENTACIÓN BINARIA] ---
+  // --- [PROTOCOLO ADAPTER: DISPARO DINÁMICO] ---
+  const handleNotifyOperative = (taskId, recipient) => {
+    if (!recipient || recipient === '?') {
+      alert("⚠️ ERROR_PROTOCOL: No hay un operativo asignado para recibir esta unidad.");
+      return;
+    }
+    
+    console.log(`%c 📧 [ADAPTER_INIT]: Notificando a -> ${recipient} `, "background: #f59e0b; color: black; font-weight: bold; padding: 2px; border-radius: 4px;");
+    
+    // Llamada al contexto pasando el ID y el destinatario real
+    notifyTaskByEmail(taskId, recipient);
+  };
+
   const handleGenerateReport = (format) => {
-    console.log(`%c [BRIDGE_PROTOCOL]: Solicitando descarga en formato ${format.toUpperCase()} `, "color: #10b981; font-weight: bold;");
-    // Llamada al método exportador del ProjectContext
     exportProjectReport(project.id, format);
   };
 
@@ -100,7 +109,6 @@ export default function KanbanBoard() {
     setIsModalOpen(false);
   };
 
-  // --- BLINDAJE DE MIEMBROS PARA EL MODAL ---
   const modalMembers = project.members && project.members.length > 0 
     ? project.members 
     : (user ? [{ email: user.email, role: 'OWNER' }] : []);
@@ -158,30 +166,19 @@ export default function KanbanBoard() {
               }`}
             />
           </div>
-          
-          <div className="flex gap-2">
-            <button onClick={handleSaveCurrentFilter} className={`p-3 border rounded-xl transition-all ${
-              isDarkMode 
-              ? 'bg-indigo-500/10 text-indigo-400 border-indigo-500/20 hover:bg-indigo-600 hover:text-white' 
-              : 'bg-indigo-50 text-indigo-600 border-indigo-100 hover:bg-indigo-600 hover:text-white shadow-sm'
-            }`}>
-              <Save size={18} />
-            </button>
-          </div>
+          <button onClick={handleSaveCurrentFilter} className={`p-3 border rounded-xl transition-all ${isDarkMode ? 'bg-indigo-500/10 text-indigo-400 border-indigo-500/20 hover:bg-indigo-600 hover:text-white' : 'bg-indigo-50 text-indigo-600 border-indigo-100 hover:bg-indigo-600 hover:text-white shadow-sm'}`}>
+            <Save size={18} />
+          </button>
         </div>
       </div>
 
       {/* ÁREA KANBAN */}
       <div className="flex gap-6 overflow-x-auto pb-8 custom-scrollbar items-start h-full">
         {columns.map((column) => {
-          
           const columnTasks = filteredTasks.filter(t => {
             const taskStatus = (t.status || '').toUpperCase();
             const colTitle = (column.title || '').toUpperCase();
-            const colId = (column.id || '').toUpperCase();
-            
-            return taskStatus === colTitle || 
-                   taskStatus === colId ||
+            return taskStatus === colTitle || taskStatus === column.id.toUpperCase() || 
                    (t.column_id === column.id) ||
                    (taskStatus === 'TO_DO' && colTitle === 'POR HACER') ||
                    (taskStatus === 'IN_PROGRESS' && colTitle === 'EN PROGRESO') ||
@@ -203,6 +200,7 @@ export default function KanbanBoard() {
                 {columnTasks.map((task) => {
                   const isFocused = focusedTaskId === task.id || focusedTaskId === task.task_id;
                   const isBug = task.type === 'BUG';
+                  const taskRecipient = task.assignedTo || '?';
 
                   return (
                     <div 
@@ -215,8 +213,26 @@ export default function KanbanBoard() {
                         : (isDarkMode ? 'bg-slate-800/40 border-slate-700/50' : 'bg-white border-slate-100 shadow-sm')
                       } ${isBug ? 'border-l-4 border-l-rose-500' : ''}`}
                     >
-                      {/* --- [TRIGGER PROTOTYPE: BOTÓN DE CLONACIÓN] --- */}
+                      {/* --- [TÚNEL DE ACCIONES RÁPIDAS] --- */}
                       <div className="absolute top-4 right-4 flex gap-2 opacity-0 group-hover:opacity-100 transition-all translate-y-2 group-hover:translate-y-0 z-20">
+                        
+                        {/* --- [TRIGGER ADAPTER: BOTÓN DE NOTIFICACIÓN DINÁMICA] --- */}
+                        <button 
+                          onClick={(e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            handleNotifyOperative(task.id || task.task_id, taskRecipient);
+                          }}
+                          className={`p-2 rounded-xl border transition-all shadow-xl ${
+                            isDarkMode 
+                            ? 'bg-slate-900 border-slate-700 text-amber-400 hover:bg-amber-500 hover:text-black' 
+                            : 'bg-white border-slate-200 text-amber-600 hover:bg-amber-500 hover:text-white shadow-sm'
+                          }`}
+                          title={`NOTIFICAR A ${taskRecipient.toUpperCase()} (ADAPTER)`}
+                        >
+                          <Mail size={12} />
+                        </button>
+
                         <button 
                           onClick={(e) => {
                             e.preventDefault();
@@ -228,9 +244,8 @@ export default function KanbanBoard() {
                           className={`p-2 rounded-xl border transition-all shadow-xl ${
                             isDarkMode 
                             ? 'bg-slate-900 border-slate-700 text-indigo-400 hover:bg-indigo-600 hover:text-white' 
-                            : 'bg-white border-slate-200 text-indigo-600 hover:bg-indigo-600 hover:text-white'
+                            : 'bg-white border-slate-200 text-indigo-600 hover:bg-indigo-600 hover:text-white shadow-sm'
                           }`}
-                          title="CLONAR UNIDAD (PROTOTYPE)"
                         >
                           <Layers size={12} />
                         </button>
@@ -244,7 +259,6 @@ export default function KanbanBoard() {
                         }`}>
                           {task.priority}
                         </span>
-                        
                         {(task.subtasks?.length > 0) && (
                           <div className="flex items-center gap-1 text-indigo-500 animate-pulse mr-8">
                             <Layers size={12} />
@@ -265,7 +279,7 @@ export default function KanbanBoard() {
                         <div className={`w-7 h-7 rounded-full flex items-center justify-center text-[9px] font-black uppercase italic shadow-sm ${
                             isDarkMode ? 'bg-slate-950 text-indigo-400' : 'bg-slate-900 text-white'
                         }`}>
-                            {task.assignedTo?.charAt(0).toUpperCase() || (user?.email?.charAt(0).toUpperCase()) || '?'}
+                            {taskRecipient.charAt(0).toUpperCase()}
                         </div>
                       </div>
                     </div>

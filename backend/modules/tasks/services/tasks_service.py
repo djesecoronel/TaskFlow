@@ -134,6 +134,7 @@ class TaskService(ITaskService):
 
     def add_notifier(self, notifier):
         """Patrón Adapter: Registra un nuevo adaptador de notificación"""
+        print(f"📡 [ADAPTER_LINK]: Nuevo destino vinculado -> {notifier.__class__.__name__}")
         self.notifiers.append(notifier)
 
     def _notify_all(self, title, message):
@@ -141,13 +142,18 @@ class TaskService(ITaskService):
         for notifier in self.notifiers:
             notifier.send(title, message)
 
-    # --- BRIDGE LOGIC ---
+    # --- BRIDGE LOGIC: IMPLEMENTACIÓN BINARIA ---
     def generate_report(self, format_type="pdf"):
         """
         Patrón Bridge: Desacopla la abstracción del reporte de su implementación física.
+        Ahora genera un flujo binario compatible con send_file de Flask.
         """
         try:
+            print(f"🌉 [BRIDGE_SERVICE]: Iniciando generación de reporte binario en formato {format_type.upper()}")
             from modules.tasks.reports.report_implementor import PDFFormat, ExcelFormat
+            
+            # Abstracción refinada: Seleccionamos el Implementador concreto
+            implementor = ExcelFormat() if format_type.lower() == "excel" else PDFFormat()
             
             try:
                 from modules.tasks.reports.report_implementor import DetailedTaskReport
@@ -156,22 +162,22 @@ class TaskService(ITaskService):
                     def __init__(self, implementor):
                         self.implementor = implementor
                     def run(self, data):
+                        # Delegación al implementador (Core del Bridge)
                         return self.implementor.generate(data)
 
-            implementor = ExcelFormat() if format_type.lower() == "excel" else PDFFormat()
             report = DetailedTaskReport(implementor)
             
+            # Recopilamos datos frescos del Nodo Central
             all_tasks = self.get_all_tasks()
-            # Serialización para el reporte
+            # Serialización profunda para que el Implementador reciba datos limpios
             clean_data = [t if isinstance(t, dict) else t.to_dict() for t in all_tasks]
             
+            # Ejecución del Puente: El reporte devuelve un BytesIO (binario en memoria)
             return report.run(clean_data)
 
         except Exception as e:
-            return {
-                "error": "ERROR_ESTRUCTURA_BRIDGE",
-                "detalle": f"No se pudo inicializar el Bridge: {str(e)}"
-            }, 500
+            print(f"❌ [BRIDGE_FATAL_ERROR]: {str(e)}")
+            return None
 
     # --- CRUD & CORE LOGIC (FACADE) ---
 
@@ -190,6 +196,8 @@ class TaskService(ITaskService):
         data["theme"] = self.current_theme.value
         
         task = TaskFactory.from_dict(data)
+        
+        # Disparo de notificación vía Adapters tras creación
         self._notify_all("NUEVA_TAREA", f"Se ha creado la tarea: {task.title}")
         
         return self.repository.create(self._clean_for_repo(task.to_dict()))
@@ -230,6 +238,7 @@ class TaskService(ITaskService):
         task_data["column_id"] = data.get("column_id")
         task_data["user_id"] = data.get("user_id")
         
+        # Disparo de notificación vía Adapters tras construcción avanzada
         self._notify_all("TAREA_AVANZADA", f"Creada con Builder: {task.title}")
         
         return self.repository.create(self._clean_for_repo(task_data))
@@ -258,6 +267,9 @@ class TaskService(ITaskService):
         old_column = getattr(task, "column_id", "Unknown")
         task.column_id = column_id
         task.history.append(f"LOG: Movido de col_{old_column} a col_{column_id} en {datetime.now().isoformat()}")
+        
+        # Notificación de movimiento
+        self._notify_all("MOVIMIENTO_TAREA", f"Unidad {task_id} movida a {column_id}")
         
         self.repository.update(task_id, self._clean_for_repo({"status": column_id}))
         return task.history
