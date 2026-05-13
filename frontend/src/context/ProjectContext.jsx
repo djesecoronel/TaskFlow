@@ -7,7 +7,7 @@ import { TaskFactory } from '../utils/taskFactory';
 const ProjectContext = createContext();
 
 // CONFIGURACIÓN DE ACCESO AL NODO CENTRAL (BACKEND PYTHON)
-const API_URL = "http://192.168.40.53:5000/api";
+const API_URL = "http://192.168.40.51:5000/api";
 
 const DEFAULT_COLUMNS = [
   { id: 'col-1', title: 'Por hacer', wipLimit: 5 },
@@ -421,7 +421,7 @@ export const ProjectProvider = ({ children }) => {
       saveSnapshot(); 
 
       try {
-        await axios.delete(`http://192.168.40.53:5000/api/tasks/${taskId}`);
+        await axios.delete(`http://192.168.40.51:5000/api/tasks/${taskId}`);
 
         setProjects(prev => prev.map(p => {
           if (String(p.id) === String(projectId)) {

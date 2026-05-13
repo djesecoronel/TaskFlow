@@ -6,11 +6,12 @@ from modules.tasks.repository.task_repository import TaskRepository
 # --- INTEGRACIÓN DE PATRONES ESTRUCTURALES ---
 from modules.tasks.services.task_service_proxy import TaskServiceProxy
 from modules.tasks.adapters.notification_adapter import EmailNotificationAdapter, SlackNotificationAdapter
+from modules.tasks.facade.task_facade import TaskFacade # <--- NUEVO: PATRÓN FACADE
 
 # Definición del Namespace: Punto de entrada para el CORE_COMMAND
 task_ns = Namespace('tasks', description='OPERACIONES DE TAREAS - CORE_COMMAND')
 
-# --- CONFIGURACIÓN DE INYECCIÓN DE DEPENDENCIAS (PROXY LAYER) ---
+# --- CONFIGURACIÓN DE INYECCIÓN DE DEPENDENCIAS (PROXY & FACADE LAYER) ---
 # 1. Repositorio: Acceso a la persistencia
 repository = TaskRepository()
 
@@ -20,6 +21,10 @@ service = TaskServiceProxy(repository)
 # 3. Patrón Adapter: Registro de notificadores externos
 service.add_notifier(EmailNotificationAdapter())
 service.add_notifier(SlackNotificationAdapter())
+
+# 4. PATRÓN FACADE: El Orquestador Maestro (Fachada de Backend)
+# Unifica el servicio y el proxy para simplificar las rutas de la API
+facade = TaskFacade(service)
 
 # --- MODELOS DE DATOS PARA DOCUMENTACIÓN (SWAGGER/RESTX) ---
 
@@ -125,20 +130,21 @@ class TestNotification(Resource):
         
         return result, 200
 
-# --- ENDPOINTS: CRUD PRINCIPAL (AUDITADOS POR PROXY) ---
+# --- ENDPOINTS: CRUD PRINCIPAL (AUDITADOS POR FACHADA/PROXY) ---
 
 @task_ns.route('/')
 class TaskList(Resource):
     def get(self):
-        """Proxy Audit: Listar todas las unidades de trabajo"""
-        tasks = service.get_all_tasks()
+        """Proxy Audit: Listar todas las unidades de trabajo vía Facade"""
+        tasks = facade.fetch_all_tasks()
         return serialize_task(tasks), 200
 
     @task_ns.expect(task_model)
     def post(self):
-        """Factory Method + Chain of Responsibility: Creación validada"""
+        """FACADE + Factory Method: Creación simplificada y orquestada"""
         data = request.json
-        result = service.create_task(data)
+        # La Fachada maneja la creación y cualquier lógica adicional de inicio
+        result = facade.execute_create_task(data, data.get('assigned_to'))
         return serialize_task(result), 201
 
 @task_ns.route('/advanced')

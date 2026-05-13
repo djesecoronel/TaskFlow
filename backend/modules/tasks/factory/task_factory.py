@@ -50,8 +50,17 @@ class TaskFactory:
         visual_style = theme_factory.create_style()
 
         # --- Lógica de Flyweight (Optimización de Memoria) ---
+        # Recuperamos la prioridad para el Flyweight
         priority_val = kwargs.get("priority", PriorityTask.Medium)
+        if isinstance(priority_val, str):
+            try: priority_val = PriorityTask(priority_val.upper())
+            except: priority_val = PriorityTask.Medium
+
+        # 🪶 [FLYWEIGHT_CORE]: Solicitamos el objeto compartido a la Fábrica
         shared_style = FlyweightFactory.get_flyweight(task_type, priority_val)
+        
+        # LOG DE TELEMETRÍA: Esto demuestra que el patrón Flyweight está operando
+        print(f"🪶 [FLYWEIGHT_INFO]: Unidad '{title}' vinculada a objeto compartido ID: {id(shared_style)}")
 
         # Inyectamos el diccionario de estilos combinado para la respuesta al Front
         kwargs["visual_style"] = {

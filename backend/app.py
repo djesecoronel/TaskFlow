@@ -15,6 +15,12 @@ from flask import Flask
 from flask_restx import Api
 from flask_cors import CORS
 
+# --- [INYECCIÓN DE COMPONENTES CORE] ---
+from modules.tasks.repository.task_repository import TaskRepository
+from modules.tasks.services.tasks_service import TaskService
+from modules.tasks.services.task_service_proxy import TaskServiceProxy
+from modules.tasks.facade.task_facade import TaskFacade  # <--- NUEVO: PATRÓN FACADE
+
 # 2. Importación de Namespaces
 from modules.tasks.routes.task_routes import task_ns
 from config.routes.db_routes import health_ns
@@ -22,6 +28,14 @@ from modules.auth.routes.auth_routes import auth_ns
 
 # 3. Inicialización de la Aplicación
 app = Flask(__name__)
+
+# --- [INICIALIZACIÓN DE LA ESTRUCTURA MAESTRA] ---
+# Creamos la cadena de mando: Repository -> Service -> Proxy -> FACADE
+task_repo = TaskRepository()
+base_service = TaskService(task_repo)
+task_proxy = TaskServiceProxy(task_repo)  # El proxy envuelve al servicio real
+# El Facade unifica el acceso para las rutas
+task_facade = TaskFacade(task_proxy)
 
 # --- [FIX: PROTOCOLO DE ACCESO MULTI-ORIGEN TOTAL] ---
 # Hemos expandido los métodos para incluir PATCH (necesario en actualizaciones parciales)
@@ -35,7 +49,7 @@ CORS(app, resources={
     }
 })
 
-# 4. Configuración de la API (Patrón Facade)
+# 4. Configuración de la API (Patrón Facade de Documentación)
 api = Api(
     app, 
     version='1.0', 
@@ -63,6 +77,7 @@ def after_request(response):
 if __name__ == "__main__":
     print("--------------------------------------------------")
     print(">>> INICIANDO NODO_CENTRAL: STATUS_OPERATIVO")
+    print(">>> ARQUITECTURA: FACADE_PATTERN_LOADED")
     print(">>> PROTOCOLO: HTTP/RESTX")
     print(">>> ESCUCHANDO EN: 0.0.0.0:5000")
     print("--------------------------------------------------")
