@@ -30,4 +30,11 @@ class SupabaseClient:
         return cls._instance
 
     def get_client(self):
+        # --- NUEVA FUNCIONALIDAD: VALIDACIÓN DE INTEGRIDAD DEL CLIENTE ---
+        # Verificamos si la instancia del cliente sigue activa antes de retornarla
+        if self.client is None:
+            print("⚠️ [SYSTEM_ALERT]: Cliente detectado como NULL, reiniciando flujo de conexión...")
+            url = os.getenv("SUPABASE_URL")
+            key = os.getenv("SUPABASE_KEY")
+            self.client = create_client(url, key)
         return self.client

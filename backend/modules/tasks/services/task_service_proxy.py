@@ -63,6 +63,10 @@ class TaskServiceProxy(ITaskService):
         return self._real_service.notify_and_log(task_id, recipient)
 
     def move_task(self, task_id, column_id):
+        # [SECURITY_CHECK]: Validación de integridad para el movimiento Kanban
+        if not column_id:
+            print(f"❌ [PROXY_ERROR]: Intento de movimiento fallido, column_id nulo para {task_id}")
+            return None
         self._log_access("KANBAN_SHIFT", f"Unidad {task_id} -> {column_id}")
         return self._real_service.move_task(task_id, column_id)
 

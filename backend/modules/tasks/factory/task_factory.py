@@ -139,12 +139,14 @@ class TaskFactory:
             "status": data.get("status") or "TO_DO",
             "priority": data.get("priority") or "MEDIA",
             "user_id": data.get("user_id"), # ANCLAJE CRÍTICO DE OPERATIVO
+            "assignedTo": data.get("assignedTo"), # <--- AÑADIDO: VÍNCULO DE RESPONSABILIDAD
             "column_id": data.get("column_id"),
             "comments": data.get("comments") or [],
             "history": data.get("history") or [],
             "time_logs": data.get("time_logs") or [],
             "attachments": data.get("attachments") or [],
-            "parent_task": data.get("parent_task"),
+            "parent_task": data.get("parent_task"), # <--- AÑADIDO: PROTOCOLO COMPOSITE
+            "subtasks": data.get("subtasks") or [],  # <--- AÑADIDO: RECURSIÓN COMPOSITE
             "theme": data.get("theme") or ThemeType.LIGHT.value 
         }
 

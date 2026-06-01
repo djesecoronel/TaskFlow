@@ -36,7 +36,7 @@ export default function TaskModal({
     parent_id: null, 
     subtasks: [],    
     attachments: [], 
-    comments: []     
+    comments: []    
   });
 
   const [newSubtask, setNewSubtask] = useState('');
@@ -51,14 +51,28 @@ export default function TaskModal({
         setTaskData({
           ...taskToEdit,
           assignedTo: taskToEdit.assignedTo || taskToEdit.assigned_to || getInitialAssignee(),
-          status: taskToEdit.status || initialStatus
+          status: taskToEdit.status || initialStatus,
+          type: taskToEdit.type || 'TASK'
         });
       } else {
-        // MODO CREACIÓN: Reset de terminal
-        resetForm();
+        // MODO CREACIÓN: Reset de terminal y asocición jerárquica si aplica
+        setTaskData({
+          title: '',
+          description: '',
+          priority: 'MEDIA',
+          type: 'TASK',
+          dueDate: '',
+          estimation: '',
+          assignedTo: getInitialAssignee(),
+          status: initialStatus || 'TO_DO',
+          parent_id: (isSubtask && allTasks.length > 0) ? (allTasks[0].id || allTasks[0].task_id || null) : null,
+          subtasks: [],
+          attachments: [],
+          comments: []
+        });
       }
     }
-  }, [isOpen, taskToEdit, initialStatus]);
+  }, [isOpen, taskToEdit, initialStatus, isSubtask, allTasks]);
 
   if (!isOpen) return null;
 
@@ -94,8 +108,18 @@ export default function TaskModal({
     e.preventDefault();
     if (!taskData.title.trim()) return;
     
+    // --- LIMPIEZA Y VALIDACIÓN DE ESTRUCTURA ---
+    // [FIX_PERSISTENCIA]: Aseguramos que 'type' pase explícitamente al payload
+    const payload = {
+        ...taskData,
+        assigned_to: taskData.assignedTo,
+        type: taskData.type || 'TASK', // Aseguramos que no se pierda el tipo
+        description: taskData.description || 'Sin descripción'
+    };
+    delete payload.assignedTo;
+
     // Disparamos la carga útil hacia el Kernel
-    onSave(taskData);
+    onSave(payload);
     onClose();
     resetForm();
   };

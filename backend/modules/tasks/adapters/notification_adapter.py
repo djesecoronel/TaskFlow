@@ -42,6 +42,19 @@ class EmailNotificationAdapter(INotificationTarget): # Añadimos herencia para c
             print(f"❌ [ADAPTER_ERROR]: Fallo en envío SMTP -> {e}")
             return False
 
+    # --- NUEVA FUNCIONALIDAD: IMPLEMENTACIÓN OBSERVER ---
+    def update(self, event_type: str, task_data: dict) -> None:
+        """
+        Intercepta el evento del Sujeto y procesa de forma automática 
+        el formato del correo electrónico basándose en la acción.
+        """
+        title = f"NOTIFICACIÓN AUTOMÁTICA: {event_type}"
+        message = f"Se ha detectado un cambio en el sistema.\nTarea: {task_data.get('title', 'SIN_TITULO')}\nEstado: {task_data.get('status', 'N/A')}"
+        
+        # Reutilizamos el método de envío existente del adaptador sin alterar su flujo core
+        self.send(title, message)
+
+
 class SlackNotificationAdapter(INotificationTarget):
     def __init__(self):
         # URL de Webhook real (Obtenla en api.slack.com)
@@ -66,3 +79,15 @@ class SlackNotificationAdapter(INotificationTarget):
         except Exception as e:
             print(f"❌ [ADAPTER_ERROR]: Fallo en Slack -> {e}")
             return False
+
+    # --- NUEVA FUNCIONALIDAD: IMPLEMENTACIÓN OBSERVER ---
+    def update(self, event_type: str, task_data: dict) -> None:
+        """
+        Intercepta el evento del Sujeto y formatea un mensaje instantáneo 
+        con Markdown enriquecido para los canales de Slack.
+        """
+        title = f"SISTEMA OBSERVER [{event_type}]"
+        message = f"⚡ *Nodo Modificado*: {task_data.get('title', 'SIN_TITULO')}\n📋 *Prioridad*: {task_data.get('priority', 'NORMAL')}"
+        
+        # Reutilizamos el método de envío existente del adaptador sin alterar su flujo core
+        self.send(title, message)

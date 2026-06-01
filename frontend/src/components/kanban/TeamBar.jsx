@@ -11,9 +11,19 @@ export default function TeamBar({ members = [], onInvite, onRemove, isAdmin }) {
     <div className="flex items-center gap-4 py-2 px-4 bg-slate-900/40 border border-slate-800/60 rounded-2xl backdrop-blur-md shadow-[0_0_50px_rgba(0,0,0,0.3)]">
       <div className="flex -space-x-3 overflow-hidden">
         {safeMembers.map((member, i) => {
+          // --- ADAPTACIÓN POLIMÓRFICA DE DATOS (POR SI VIENE COMO STRING O COMO OBJETO) ---
+          const isStringMember = typeof member === 'string';
+          
+          // Buscamos el email en cualquier propiedad posible para evitar que quede vacío
+          const emailDisplay = isStringMember 
+            ? member 
+            : (member?.email || member?.user_email || member?.name || 'USUARIO_ANONIMO');
+          
           // Extraemos la inicial con seguridad extrema
-          const initial = member?.email?.charAt(0)?.toUpperCase() || member?.name?.charAt(0)?.toUpperCase() || '?';
-          const emailDisplay = member?.email || 'USUARIO_ANONIMO';
+          const initial = emailDisplay.charAt(0).toUpperCase() || '?';
+          
+          // Extraemos el rol de forma segura
+          const memberRole = isStringMember ? 'MEMBER' : (member?.role || 'MEMBER');
 
           return (
             <div 
@@ -27,13 +37,13 @@ export default function TeamBar({ members = [], onInvite, onRemove, isAdmin }) {
               {/* Tooltip de Rol (Manteniendo tu lógica) */}
               <div className="absolute -bottom-10 left-1/2 -translate-x-1/2 hidden group-hover:flex items-center gap-1.5 bg-slate-950 border border-slate-800 px-3 py-1.5 rounded-lg whitespace-nowrap z-50 shadow-2xl animate-in fade-in slide-in-from-top-2">
                 <span className="text-white text-[9px] font-black italic tracking-tighter">{emailDisplay}</span>
-                {member?.role === 'ADMIN' && <Shield size={10} className="text-amber-500 animate-pulse" />}
+                {(memberRole === 'ADMIN' || memberRole === 'OWNER') && <Shield size={10} className="text-amber-500 animate-pulse" />}
               </div>
 
               {/* Botón de expulsar (Blindado contra nulos) */}
-              {isAdmin && member?.email !== user?.email && (
+              {isAdmin && emailDisplay !== user?.email && (
                 <button 
-                  onClick={() => onRemove(member.email)}
+                  onClick={() => onRemove && onRemove(emailDisplay)}
                   className="absolute -top-1 -right-1 bg-rose-500 text-white rounded-full p-0.5 opacity-0 group-hover:opacity-100 transition-opacity shadow-lg hover:bg-rose-600"
                 >
                   <X size={10} />
