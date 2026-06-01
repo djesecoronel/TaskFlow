@@ -3,15 +3,122 @@ import { useParams, Link, useLocation } from 'react-router-dom';
 import { useProjects } from '../context/ProjectContext';
 import { useAuth } from '../context/AuthContext';
 import { useTheme } from '../context/ThemeContext'; 
+import api from '../api/api'; // Importamos la instancia de Axios configurada
 import { 
   Plus, ArrowLeft, Trash2, GripVertical, Tag, 
   Search, X, Save, Star, Lock, FileBarChart, Layers,
-  Mail, GitGraph, Edit3 // GitGraph para Composite, Edit3 para Edición
+  Mail, GitGraph, Edit3 
 } from 'lucide-react';
 
 // Componentes
 import TaskModal from '../components/modals/TaskModal';
 import TeamBar from '../components/kanban/TeamBar';
+
+// --- NUEVA FUNCIONALIDAD: INTERFACES Y PATRONES DE COMPORTAMIENTO ---
+
+// 1. PATRÓN STRATEGY: Estrategias de Filtrado/Ordenamiento en el cliente
+const FilteringStrategies = {
+  DEFAULT: (tasks, searchVal, priorityVal, typeVal) => {
+    return tasks.filter(task => {
+      const matchesSearch = (task.title || '').toLowerCase().includes(searchVal.toLowerCase()) || 
+                            (task.description || '').toLowerCase().includes(searchVal.toLowerCase());
+      const matchesPriority = priorityVal === 'ALL' || task.priority === priorityVal;
+      const matchesType = typeVal === 'ALL' || task.type === typeVal;
+      return matchesSearch && matchesPriority && matchesType;
+    });
+  }
+};
+
+// 2. PATRÓN COMMAND: Encapsulación de acciones de UI + Sincronización Backend
+class UICommandInvoker {
+  constructor() {
+    this.history = [];
+  }
+  execute(command) {
+    this.history.push(command);
+    command.execute();
+  }
+}
+
+class MoveTaskCommand {
+  constructor(moveTaskFn, projectId, taskId, targetColumn, refreshFn) {
+    this.moveTaskFn = moveTaskFn;
+    this.projectId = projectId;
+    this.taskId = taskId;
+    this.targetColumn = targetColumn;
+    this.refreshFn = refreshFn;
+  }
+  async execute() {
+    console.log(`🕹️ [UI_COMMAND]: Ejecutando MoveTaskCommand de tarea ${this.taskId} a ${this.targetColumn}`);
+    // Llamada al Backend vía API REST
+    try {
+      await api.patch(`/tasks/${this.taskId}`, { status: this.targetColumn });
+      this.moveTaskFn(this.projectId, this.taskId, this.targetColumn);
+      // Forzamos refresco de UI inmediato tras el éxito
+      if (this.refreshFn) this.refreshFn(prev => prev + 1);
+    } catch (err) { console.error("❌ [BACKEND_SYNC_ERROR]:", err); }
+  }
+}
+
+class DeleteTaskCommand {
+  constructor(deleteTaskFn, projectId, taskId) {
+    this.deleteTaskFn = deleteTaskFn;
+    this.projectId = projectId;
+    this.taskId = taskId;
+  }
+  async execute() {
+    console.log(`🕹️ [UI_COMMAND]: Ejecutando DeleteTaskCommand para unidad física ${this.taskId}`);
+    // Llamada al Backend vía API REST
+    try {
+      await api.delete(`/tasks/${this.taskId}`);
+    } catch (err) { console.error("❌ [BACKEND_SYNC_ERROR]:", err); }
+    
+    this.deleteTaskFn(this.projectId, this.taskId);
+  }
+}
+
+// --- NUEVA FUNCIONALIDAD: COMANDOS PARA CREACIÓN Y ACTUALIZACIÓN ---
+class AddTaskCommand {
+  constructor(addTaskFn, projectId, payload) {
+    this.addTaskFn = addTaskFn;
+    this.projectId = projectId;
+    this.payload = payload;
+  }
+  async execute() {
+    try { await api.post(`/projects/${this.projectId}/tasks`, this.payload); } 
+    catch (err) { console.error("❌ [BACKEND_SYNC_ERROR]:", err); }
+    this.addTaskFn(this.projectId, this.payload);
+  }
+}
+
+class UpdateTaskCommand {
+  constructor(updateTaskFn, projectId, taskId, payload) {
+    this.updateTaskFn = updateTaskFn;
+    this.projectId = projectId;
+    this.taskId = taskId;
+    this.payload = payload;
+  }
+  async execute() {
+    try { await api.put(`/tasks/${this.taskId}`, this.payload); } 
+    catch (err) { console.error("❌ [BACKEND_SYNC_ERROR]:", err); }
+    this.updateTaskFn(this.projectId, this.taskId, this.payload);
+  }
+}
+
+// Inicialización del invocador de frontend
+const uiInvoker = new UICommandInvoker();
+
+// --- NUEVA FUNCIONALIDAD: UTILERÍA DE TELEMETRÍA CENTRALIZADA ---
+const Telemetry = {
+  log: (msg, type = 'info') => {
+    const styles = {
+      info: "background: #3b82f6; color: white; padding: 2px 5px;",
+      error: "background: #ef4444; color: white; padding: 2px 5px;",
+      warn: "background: #f59e0b; color: black; padding: 2px 5px;"
+    };
+    console.log(`%c[SYSTEM_TELEMETRY]: ${msg}`, styles[type] || styles.info);
+  }
+};
 
 export default function KanbanBoard() {
   const { id } = useParams();
@@ -19,17 +126,20 @@ export default function KanbanBoard() {
   const { user } = useAuth();
   const { theme, isDarkMode } = useTheme(); 
   
+  const [refreshKey, setRefreshKey] = useState(0);
+  
   // --- [CORE_COMMAND: INYECCIÓN DE LÓGICA DE PROYECTOS] ---
   const { 
     projects, 
     addTask, 
     moveTask, 
     cloneTask, 
-    deleteTask, // <--- PROTOCOLO DE PURGA SIN DAÑAR ESTRUCTURA
-    addSubtask, // <--- PROTOCOLO COMPOSITE (JERARQUÍAS)
-    updateTask, // <--- PROTOCOLO DE EDICIÓN (MUTACIÓN)
+    deleteTask, 
+    addSubtask, 
+    updateTask, 
     exportProjectReport,
-    notifyTaskByEmail // <--- CONSUMIMOS EL PROTOCOLO ADAPTER DINÁMICO
+    notifyTaskByEmail,
+    globalProjectSubject 
   } = useProjects();
   
   const queryParams = new URLSearchParams(search);
@@ -37,9 +147,11 @@ export default function KanbanBoard() {
 
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [activeColumn, setActiveColumn] = useState('');
-  const [editingTask, setEditingTask] = useState(null); // <--- ESTADO PARA IDENTIFICAR EDICIÓN
-  const [parentTaskId, setParentTaskId] = useState(null); // <--- ESTADO PARA EL VÍNCULO JERÁRQUICO
+  const [editingTask, setEditingTask] = useState(null); 
+  const [parentTaskId, setParentTaskId] = useState(null); 
   const [filters, setFilters] = useState({ search: '', priority: 'ALL', type: 'ALL' });
+  
+  const [currentStrategy, setCurrentStrategy] = useState('DEFAULT');
 
   const [savedFilters, setSavedFilters] = useState(() => {
     const local = localStorage.getItem(`saved_filters_${id}`);
@@ -55,6 +167,16 @@ export default function KanbanBoard() {
     }
   }, [savedFilters, id]);
 
+  // --- SUSCRIPCIÓN A CAMBIOS PARA REACTIVIDAD ---
+  useEffect(() => {
+    if (!globalProjectSubject) return;
+    const subscription = globalProjectSubject.subscribe(() => {
+      Telemetry.log("Sincronización de estado detectada vía Observable");
+      setRefreshKey(prev => prev + 1);
+    });
+    return () => subscription.unsubscribe();
+  }, [globalProjectSubject]);
+
   if (!project) return (
     <div className="min-h-[400px] flex items-center justify-center">
       <div className={`animate-pulse font-black italic uppercase tracking-widest text-[10px] ${theme.textSecondary}`}>
@@ -66,30 +188,19 @@ export default function KanbanBoard() {
   const columns = project.board?.columns || [];
   const tasks = project.tasks || [];
 
-  const filteredTasks = tasks.filter(task => {
-    const matchesSearch = (task.title || '').toLowerCase().includes(filters.search.toLowerCase()) || 
-                          (task.description || '').toLowerCase().includes(filters.search.toLowerCase());
-    const matchesPriority = filters.priority === 'ALL' || task.priority === filters.priority;
-    const matchesType = filters.type === 'ALL' || task.type === filters.type;
-    return matchesSearch && matchesPriority && matchesType;
-  });
+  const filteredTasks = FilteringStrategies[currentStrategy](
+    tasks, 
+    filters.search, 
+    filters.priority, 
+    filters.type
+  );
 
-// Localiza esto en tu KanbanBoard.jsx
   const handleNotifyOperative = (taskId, recipient) => {
-    // --- [ELIMINA O COMENTA ESTE BLOQUE] ---
-    /* if (!recipient || recipient === '?') {
-      alert("⚠️ ERROR_PROTOCOL: No hay un operativo asignado...");
-      return;
-    }
-    */
-    
-    // Fuerza el envío al Backend. Si no hay recipient, enviará "SIN_ASIGNAR"
     const finalRecipient = (!recipient || recipient === '?') ? "operativo_fantasma@taskflow.com" : recipient;
-    
-    console.log(`%c 📧 [ADAPTER_INIT]: Forzando notificación para -> ${finalRecipient} `, "background: #f59e0b; color: black; font-weight: bold;");
-    
+    Telemetry.log(`Forzando notification para -> ${finalRecipient}`, 'warn');
     notifyTaskByEmail(taskId, finalRecipient);
   };
+  
   const handleGenerateReport = (format) => {
     exportProjectReport(project.id, format);
   };
@@ -103,25 +214,24 @@ export default function KanbanBoard() {
   const onDragOver = (e) => e.preventDefault();
   const onDrop = (e, columnTitle) => {
     const taskId = e.dataTransfer.getData("taskId");
-    moveTask(project.id, taskId, columnTitle);
+    const moveCmd = new MoveTaskCommand(moveTask, project.id, taskId, columnTitle, setRefreshKey);
+    uiInvoker.execute(moveCmd);
   };
 
   const openAddTask = (columnTitle) => {
-    setEditingTask(null); // Reseteamos modo edición
-    setParentTaskId(null); // Tarea raíz
+    setEditingTask(null);
+    setParentTaskId(null);
     setActiveColumn(columnTitle);
     setIsModalOpen(true);
   };
 
-  // --- [NUEVA FUNCIÓN: DISPARAR EDICIÓN TÁCTICA] ---
   const openEditTask = (task) => {
     setParentTaskId(null);
-    setEditingTask(task); // Cargamos la unidad a mutar
+    setEditingTask(task);
     setActiveColumn(task.status || 'POR HACER');
     setIsModalOpen(true);
   };
 
-  // --- [NUEVA FUNCIÓN: DISPARAR RAMIFICACIÓN COMPOSITE] ---
   const openAddSubtask = (parentTask) => {
     setEditingTask(null);
     setParentTaskId(parentTask.id || parentTask.task_id);
@@ -130,20 +240,26 @@ export default function KanbanBoard() {
   };
 
   const onSaveTask = (data) => {
-    const sanitizedAssignedTo = typeof data.assignedTo === 'object' ? data.assignedTo.email : data.assignedTo;
+    const taskPayload = { 
+      ...data, 
+      assignedTo: typeof data.assignedTo === 'object' ? data.assignedTo.email : data.assignedTo,
+      type: data.type || 'TASK'
+    };
+
+    console.log("🚀 [DEBUG_PAYLOAD_FINAL]:", taskPayload);
     
     if (editingTask) {
-      // SI HAY UN OBJETO EN EDICIÓN, DISPARAMOS PROTOCOLO DE MUTACIÓN
-      updateTask(project.id, editingTask.id || editingTask.task_id, { ...data, assignedTo: sanitizedAssignedTo });
+      const updateCmd = new UpdateTaskCommand(updateTask, project.id, editingTask.id || editingTask.task_id, taskPayload);
+      uiInvoker.execute(updateCmd);
     } else if (parentTaskId) {
-      // SI HAY UN PARENT_ID, DISPARAMOS EL PROTOCOLO COMPOSITE
-      addSubtask(project.id, parentTaskId, { ...data, assignedTo: sanitizedAssignedTo });
+      addSubtask(project.id, parentTaskId, taskPayload);
     } else {
-      // SI NO, ES UNA TAREA ESTÁNDAR
-      addTask(project.id, { ...data, assignedTo: sanitizedAssignedTo });
+      const addCmd = new AddTaskCommand(addTask, project.id, taskPayload);
+      uiInvoker.execute(addCmd);
     }
     
     setIsModalOpen(false);
+    setTimeout(() => setRefreshKey(prev => prev + 1), 100);
   };
 
   const modalMembers = project.members && project.members.length > 0 
@@ -151,7 +267,7 @@ export default function KanbanBoard() {
     : (user ? [{ email: user.email, role: 'OWNER' }] : []);
 
   return (
-    <div className="h-[calc(100vh-120px)] flex flex-col gap-6 animate-in fade-in duration-700">
+    <div key={refreshKey} className="h-[calc(100vh-120px)] flex flex-col gap-6 animate-in fade-in duration-700">
       
       {/* CABECERA */}
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-6">
@@ -225,7 +341,7 @@ export default function KanbanBoard() {
           return (
             <div key={column.id} onDragOver={onDragOver} onDrop={(e) => onDrop(e, column.title)} 
                  className={`flex-shrink-0 w-80 border rounded-[2.5rem] flex flex-col min-h-[500px] backdrop-blur-sm transition-all duration-500 ${theme.card} ${!isDarkMode && 'shadow-xl bg-white/40'}`}>
-              
+            
               <div className={`p-6 flex justify-between items-start rounded-t-[2.5rem] border-b transition-colors ${isDarkMode ? 'bg-slate-900/60 border-slate-800/50' : 'bg-slate-50/80 border-slate-100'}`}>
                 <h3 className={`text-xs font-black uppercase italic tracking-widest ${theme.textMain}`}>{column.title}</h3>
                 <button onClick={() => openAddTask(column.title)} className={`p-2 rounded-xl transition-all shadow-lg text-white ${isDarkMode ? 'bg-indigo-600 hover:bg-indigo-500' : 'bg-slate-900 hover:bg-indigo-600'}`}>
@@ -237,8 +353,16 @@ export default function KanbanBoard() {
                 {columnTasks.map((task) => {
                   const isFocused = focusedTaskId === task.id || focusedTaskId === task.task_id;
                   const isBug = task.type === 'BUG';
-                  const isSubtask = !!task.parent_task; // <--- DETECCIÓN DE RAMA COMPOSITE
+                  const isSubtask = !!task.parent_task;
                   const taskRecipient = task.assignedTo || '?';
+
+                  const typeStyles = {
+                    BUG: 'border-l-4 border-l-rose-500 shadow-[0_0_15px_rgba(244,63,94,0.15)] dark:shadow-[0_0_20px_rgba(244,63,94,0.1)]',
+                    FEATURE: 'border-l-4 border-l-purple-500 shadow-[0_0_15px_rgba(168,85,247,0.15)] dark:shadow-[0_0_20px_rgba(168,85,247,0.1)]',
+                    TASK: 'border-l-4 border-l-sky-500 shadow-[0_0_15px_rgba(14,165,233,0.15)] dark:shadow-[0_0_20px_rgba(14,165,233,0.1)]'
+                  };
+                  
+                  const auraStyle = typeStyles[task.type] || '';
 
                   return (
                     <div 
@@ -249,19 +373,14 @@ export default function KanbanBoard() {
                         isSubtask 
                         ? `ml-6 scale-[0.96] border-dashed ${isDarkMode ? 'bg-slate-950/40 border-slate-700 shadow-none' : 'bg-slate-50 border-slate-200'}` 
                         : (isFocused ? 'border-indigo-600 ring-2 ring-indigo-500/20 scale-[1.03]' : (isDarkMode ? 'bg-slate-800/40 border-slate-700/50' : 'bg-white border-slate-100 shadow-sm'))
-                      } ${isBug ? 'border-l-4 border-l-rose-500' : ''}`}
+                      } ${isBug ? 'border-l-4 border-l-rose-500' : ''} ${auraStyle}`}
                     >
-                      {/* --- [TÚNEL DE ACCIONES RÁPIDAS] --- */}
                       <div className="absolute top-4 right-4 flex gap-1 opacity-0 group-hover:opacity-100 transition-all translate-y-2 group-hover:translate-y-0 z-20">
-                        
-                        {/* --- [TRIGGER EDIT: BOTÓN DE MUTACIÓN] --- */}
                         <button onClick={(e) => { e.preventDefault(); e.stopPropagation(); openEditTask(task); }}
                           className={`p-1.5 rounded-lg border transition-all bg-white text-indigo-600 hover:bg-indigo-600 hover:text-white shadow-sm`} 
                           title="EDITAR UNIDAD">
                           <Edit3 size={11} />
                         </button>
-
-                        {/* --- [TRIGGER COMPOSITE: AÑADIR RAMA HIJA] --- */}
                         {!isSubtask && (
                           <button onClick={(e) => { e.preventDefault(); e.stopPropagation(); openAddSubtask(task); }}
                             className={`p-1.5 rounded-lg border transition-all bg-white text-emerald-600 hover:bg-emerald-500 hover:text-white shadow-sm`} 
@@ -269,27 +388,32 @@ export default function KanbanBoard() {
                             <GitGraph size={11} />
                           </button>
                         )}
-
                         <button onClick={(e) => { e.preventDefault(); e.stopPropagation(); handleNotifyOperative(task.id || task.task_id, taskRecipient); }}
                           className={`p-1.5 rounded-lg border transition-all bg-white text-amber-400 hover:bg-amber-500 hover:text-white shadow-sm`}
                           title={`NOTIFICAR A ${taskRecipient.toUpperCase()} (ADAPTER)`}
                         >
                           <Mail size={11} />
                         </button>
-
-                        <button onClick={(e) => { e.preventDefault(); e.stopPropagation(); if(window.confirm("🧬 ¿INICIAR PROTOCOLO DE CLONACIÓN PROTOTYPE?")) cloneTask(project.id, task.id || task.task_id); }}
+                        <button onClick={(e) => { e.preventDefault(); e.stopPropagation(); if(window.confirm("🧬 ¿INICIAR PROTOCOLO DE CLONACIÓN PROTOTYPE?")) { cloneTask(project.id, task.id || task.task_id); setTimeout(() => setRefreshKey(prev => prev + 1), 100); } }}
                           className={`p-1.5 rounded-lg border transition-all bg-white text-indigo-400 shadow-sm`}>
                           <Layers size={11} />
                         </button>
-
-                        <button onClick={(e) => { e.preventDefault(); e.stopPropagation(); if(window.confirm("🧨 [PROTOCOL_CRITICAL]: ¿CONFIRMA LA ELIMINACIÓN PERMANENTE?")) deleteTask(project.id, task.id || task.task_id); }}
+                        <button onClick={(e) => { 
+                          e.preventDefault(); 
+                          e.stopPropagation(); 
+                          if(window.confirm("🧨 [PROTOCOL_CRITICAL]: ¿CONFIRMA LA ELIMINACIÓN PERMANENTE?")) {
+                            const deleteCmd = new DeleteTaskCommand(deleteTask, project.id, task.id || task.task_id);
+                            uiInvoker.execute(deleteCmd);
+                            setTimeout(() => setRefreshKey(prev => prev + 1), 100);
+                          }
+                        }}
                           className={`p-1.5 rounded-lg border transition-all bg-white text-rose-500 hover:bg-rose-600 hover:text-white shadow-sm`}
-                          title="PURGAR UNIDAD">
+                          title="PURGAR UNIDAD"
+                        >
                           <Trash2 size={11} />
                         </button>
                       </div>
 
-                      {/* CONECTOR VISUAL COMPOSITE */}
                       {isSubtask && <div className="absolute -left-4 top-1/2 w-4 h-[1px] bg-slate-700/30"></div>}
 
                       <div className="flex justify-between items-start mb-3">
@@ -319,7 +443,7 @@ export default function KanbanBoard() {
                             {task.type}
                           </div>
                           <div className={`w-7 h-7 rounded-full flex items-center justify-center text-[9px] font-black uppercase italic shadow-sm ${
-                              isDarkMode ? 'bg-slate-950 text-indigo-400' : 'bg-slate-900 text-white'
+                            isDarkMode ? 'bg-slate-950 text-indigo-400' : 'bg-slate-900 text-white'
                           }`}>
                               {taskRecipient.charAt(0).toUpperCase()}
                           </div>
@@ -341,8 +465,8 @@ export default function KanbanBoard() {
         projectMembers={modalMembers}
         initialStatus={activeColumn}
         allTasks={tasks}
-        taskToEdit={editingTask} // <--- DATOS PARA EL MODO EDICIÓN
-        isSubtask={!!parentTaskId} // <--- INDICADOR JERÁRQUICO
+        taskToEdit={editingTask} 
+        isSubtask={!!parentTaskId} 
       />
     </div>
   );

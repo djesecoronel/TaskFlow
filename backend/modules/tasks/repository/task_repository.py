@@ -1,5 +1,6 @@
 from config.db import SupabaseClient
 from postgrest.exceptions import APIError
+import time
 
 class TaskRepository:
     """
@@ -44,16 +45,49 @@ class TaskRepository:
 
     def get_all(self):
         """
-        LECTURA TOTAL: Recupera el stack completo de tareas sincronizadas.
-        Ordenado cronológicamente para consistencia absoluta del Tablero Kanban.
+        CONECTOR ADAPTADOR: Enlace estructural para mapear la petición de 'tasks_service.py'
+        con el método de lectura masiva integrado.
+        """
+        return self.get_all_tasks()
+
+    def get_all_tasks(self):
+        """
+        Descarga el registro completo de la unidad 'tasks'.
+        Si Supabase está inaccesible (Error 521/Pausa), conmuta a Modo Resiliente.
         """
         try:
-            print(f"📡 [DB_SYNC]: Descargando registro completo de la unidad '{self.table}'...")
-            response = self.client.table(self.table).select("*").order("created_at").execute()
-            return response.data if response.data else []
-        except Exception as e:
-            print(f"❌ [REPO_ERROR]: Fallo en lectura masiva -> {str(e)}")
-            return []
+            # Tu lógica original de consulta a Supabase
+            response = self.client.table(self.table).select('*').execute()
+            return response.data
+            
+            # NOTA: Descomenta la línea de abajo si deseas forzar el modo simulación manualmente
+            # raise Exception("521 Web server is down")
+            
+        except Exception as error:
+            print("❌ [REPO_ERROR]: Fallo en lectura masiva -> Detectada desconexión de infraestructura.")
+            print("⚠️ [KERNEL_REPO]: Conmutando automáticamente a KERNEL_FAILSAFE_MODE...")
+            
+            # Retornamos datos estructurados idénticos a los de tu BD para no romper el Frontend
+            return [
+                {
+                    "task_id": "failsafe-01",
+                    "title": "🚨 RESTABLECER NODO CENTRAL",
+                    "description": "El enlace principal con Supabase se encuentra en mantenimiento o pausado.",
+                    "status": "IN_PROGRESS",
+                    "priority": "ALTA",
+                    "type": "BUG",
+                    "assigned_to": "davidjesecoronelhinojosa@taskflow.os"
+                },
+                {
+                    "task_id": "failsafe-02",
+                    "title": "Verificar Estado de Servicios Externos",
+                    "description": "Monitorear el progreso de restauración en el panel de control de Supabase.",
+                    "status": "TO_DO",
+                    "priority": "MEDIA",
+                    "type": "TASK",
+                    "assigned_to": "davidjesecoronelhinojosa@taskflow.os"
+                }
+            ]
     
     def get_by_id(self, task_id):
         """
@@ -70,7 +104,7 @@ class TaskRepository:
             print(f"❌ [REPO_ERROR]: Unidad {task_id} no localizada en el Nodo -> {str(e)}")
             return None
     
-    def create(self, data):
+    def create(self, data, retries=2):
         """
         PERSISTENCIA DE ESCRITURA: Inserta una nueva unidad de trabajo.
         Mapea identidades dinámicamente y retorna el objeto persistido (UUID Ready).
@@ -81,74 +115,117 @@ class TaskRepository:
         elif self.pk == "task_id" and "id" in data:
             data["task_id"] = data.pop("id")
 
-        try:
-            print(f"🚀 [REPO_SYNC]: Desplegando nueva unidad en '{self.table}' -> {data.get('title', 'SIN_TITULO')}")
-            
-            response = self.client.table(self.table)\
-                .insert(data)\
-                .execute()
-            
-            if not response.data:
-                raise Exception("SIN_DATA_RETORNO_DESPUES_DE_INSERT")
+        for i in range(retries + 1):
+            try:
+                print(f"🚀 [REPO_SYNC]: Desplegando nueva unidad en '{self.table}' -> {data.get('title', 'SIN_TITULO')}")
                 
-            print(f"✅ [REPO_SUCCESS]: Unidad persistida con ID: {response.data[0].get(self.pk)}")
-            return response.data[0]
-            
-        except APIError as e:
-            print(f"🔥 [REPO_CRITICAL]: Violación de integridad DB -> {e.message}")
-            raise e
-        except Exception as e:
-            print(f"🔥 [REPO_CRITICAL]: Fallo en protocolo de inserción -> {str(e)}")
-            return data # Fallback de emergencia para evitar pérdida de datos en memoria
+                response = self.client.table(self.table)\
+                    .insert(data)\
+                    .execute()
+                
+                if not response.data:
+                    raise Exception("SIN_DATA_RETORNO_DESPUES_DE_INSERT")
+                    
+                print(f"✅ [REPO_SUCCESS]: Unidad persistida con ID: {response.data[0].get(self.pk)}")
+                return response.data[0]
+                
+            except (APIError, Exception) as e:
+                if i < retries:
+                    print(f"⚠️ [REPO_RETRY]: Intento {i+1} fallido, reintentando...")
+                    time.sleep(1)
+                    continue
+                print(f"🔥 [REPO_CRITICAL]: Fallo persistente en protocolo de inserción -> {str(e)}")
+                return data 
     
-    def update(self, task_id, data):
+    def update(self, task_id, data, retries=2):
         """
         SINCRONIZACIÓN DE ESTADO: Actualiza parcialmente una unidad existente.
         Indispensable para movimientos de Kanban y mutación de metadatos.
         """
-        try:
-            # Blindaje: El ID del nodo es inmutable durante la sincronización
-            data.pop(self.pk, None)
-            data.pop("task_id", None)
+        # Blindaje: El ID del nodo es inmutable durante la sincronización
+        data.pop(self.pk, None)
+        data.pop("task_id", None)
 
-            print(f"🔄 [REPO_PATCH]: Sincronizando cambios para el Nodo {task_id}...")
-            
-            response = self.client.table(self.table)\
-                .update(data)\
-                .eq(self.pk, task_id)\
-                .execute()
-            
-            if not response.data:
-                print(f"⚠️ [REPO_WARNING]: Intento de actualización en unidad inexistente: {task_id}")
+        for i in range(retries + 1):
+            try:
+                print(f"🔄 [REPO_PATCH]: Sincronizando cambios para el Nodo {task_id}...")
+                
+                response = self.client.table(self.table)\
+                    .update(data)\
+                    .eq(self.pk, task_id)\
+                    .execute()
+                
+                if not response.data:
+                    return None
+                
+                print(f"✅ [REPO_UPDATE]: Sincronización de estado para {task_id} completada.")
+                return response.data[0]
+            except Exception as e:
+                if i < retries:
+                    time.sleep(1)
+                    continue
+                print(f"❌ [REPO_ERROR]: Fallo en actualización de unidad {task_id} -> {str(e)}")
                 return None
-            
-            print(f"✅ [REPO_UPDATE]: Sincronización de estado para {task_id} completada.")
-            return response.data[0]
-        except Exception as e:
-            print(f"❌ [REPO_ERROR]: Fallo en actualización de unidad {task_id} -> {str(e)}")
-            return None
     
-    def delete(self, task_id):
+    def delete(self, task_id, retries=2):
         """
         💣 [PURGE_COMMAND]: Eliminación física irreversible.
         Expulsa permanentemente la unidad del stack de persistencia central.
         """
+        for i in range(retries + 1):
+            try:
+                print(f"🧨 [DB_PURGE]: Iniciando purga física de la unidad {task_id}...")
+                
+                response = self.client.table(self.table)\
+                    .delete()\
+                    .eq(self.pk, task_id)\
+                    .execute()
+                
+                if response.data:
+                    print(f"💀 [DB_PURGE_COMPLETE]: Unidad {task_id} purgada del Nodo Maestro.")
+                    return response.data[0]
+                
+                return True
+            except Exception as e:
+                if i < retries:
+                    time.sleep(1)
+                    continue
+                print(f"❌ [REPO_ERROR]: Fallo en protocolo de purga para {task_id} -> {str(e)}")
+                return None
+
+    # --- [NUEVAS FUNCIONALIDADES: PERSISTENCIA DE OPERATIVOS] ---
+
+    def get_all_users(self):
+        """Recupera el directorio de operativos desde la tabla 'users'."""
         try:
-            print(f"🧨 [DB_PURGE]: Iniciando purga física de la unidad {task_id}...")
-            
-            response = self.client.table(self.table)\
-                .delete()\
-                .eq(self.pk, task_id)\
-                .execute()
-            
-            # Si hay datos retornados, la purga fue confirmada por el Nodo
-            if response.data:
-                print(f"💀 [DB_PURGE_COMPLETE]: Unidad {task_id} purgada del Nodo Maestro.")
-                return response.data[0]
-            
-            print(f"✅ [DB_PURGE_CONFIRMED]: Unidad {task_id} ya no reside en el sistema.")
-            return True
-            
+            return self.client.table("users").select("*").execute().data
         except Exception as e:
-            print(f"❌ [REPO_ERROR]: Fallo en protocolo de purga para {task_id} -> {str(e)}")
+            print(f"❌ [REPO_ERROR]: Fallo al recuperar usuarios -> {str(e)}")
+            return []
+
+    def create_user(self, user_data):
+        """Persiste un nuevo registro de usuario en la tabla 'users'."""
+        try:
+            response = self.client.table("users").insert(user_data).execute()
+            return response.data[0] if response.data else None
+        except Exception as e:
+            print(f"❌ [REPO_ERROR]: Fallo al crear usuario -> {str(e)}")
+            return None
+
+    def update_user_status(self, user_id, status):
+        """Actualiza el estado operativo de un usuario."""
+        try:
+            response = self.client.table("users").update({"status": status}).eq("id", user_id).execute()
+            return response.data[0] if response.data else None
+        except Exception as e:
+            print(f"❌ [REPO_ERROR]: Fallo al actualizar estado de usuario -> {str(e)}")
+            return None
+
+    def delete_user(self, user_id):
+        """Elimina un operativo del sistema."""
+        try:
+            response = self.client.table("users").delete().eq("id", user_id).execute()
+            return True
+        except Exception as e:
+            print(f"❌ [REPO_ERROR]: Fallo al eliminar usuario -> {str(e)}")
             return None

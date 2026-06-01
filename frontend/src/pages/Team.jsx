@@ -1,18 +1,20 @@
 import { useState, useMemo, useEffect } from 'react';
 import { useProjects } from '../context/ProjectContext';
 import { useAuth } from '../context/AuthContext';
-import { useTheme } from '../context/ThemeContext'; // 1. IMPORTAR TEMA
+import { useTheme } from '../context/ThemeContext'; 
 import { 
   Users, Mail, ShieldCheck, Shield, 
   Search, ExternalLink, Globe, Filter, 
   UserPlus, Edit3, Power, CheckCircle2,
-  AlertCircle, LayoutGrid, X, Database
+  AlertCircle, LayoutGrid, X, Database, Trash2
 } from 'lucide-react';
 
 // Sub-Componente: Modal para Añadir/Editar Operativo
 function MemberModal({ isOpen, onClose, onSubmit, memberToEdit, projects = [] }) {
-  const { theme, isDarkMode } = useTheme(); // CONSUMIR TEMA EN SUB-COMPONENTE
+  const { theme, isDarkMode } = useTheme(); 
   const [formData, setFormData] = useState({
+    id: '', 
+    name: '', 
     email: '',
     role: 'EDITOR',
     projectId: ''
@@ -21,12 +23,14 @@ function MemberModal({ isOpen, onClose, onSubmit, memberToEdit, projects = [] })
   useEffect(() => {
     if (memberToEdit) {
       setFormData({
+        id: memberToEdit.id || '',
+        name: memberToEdit.name || '',
         email: memberToEdit.email || '',
         role: memberToEdit.role || 'EDITOR',
         projectId: memberToEdit.projectId || ''
       });
     } else {
-      setFormData({ email: '', role: 'EDITOR', projectId: '' });
+      setFormData({ id: '', name: '', email: '', role: 'EDITOR', projectId: '' });
     }
   }, [memberToEdit, isOpen]);
 
@@ -54,6 +58,19 @@ function MemberModal({ isOpen, onClose, onSubmit, memberToEdit, projects = [] })
           onSubmit(formData);
           onClose();
         }}>
+          <div className="space-y-2">
+            <label className="text-[9px] font-black text-indigo-500 uppercase tracking-widest ml-1">Nombre Operativo</label>
+            <input 
+              required
+              className={`w-full border rounded-2xl py-4 px-6 text-[11px] font-bold uppercase outline-none focus:border-indigo-500 transition-all ${
+                isDarkMode ? 'bg-black/50 border-slate-800 text-white' : 'bg-slate-50 border-slate-200 text-slate-900'
+              }`}
+              placeholder="E.G. ALEJANDRO CASTRO"
+              value={formData.name}
+              onChange={(e) => setFormData({...formData, name: e.target.value})}
+            />
+          </div>
+
           <div className="space-y-2">
             <label className="text-[9px] font-black text-indigo-500 uppercase tracking-widest ml-1">Identificador de Red (Email)</label>
             <input 
@@ -95,7 +112,8 @@ function MemberModal({ isOpen, onClose, onSubmit, memberToEdit, projects = [] })
                 onChange={(e) => setFormData({...formData, projectId: e.target.value})}
               >
                 <option value="" disabled>SELECCIONAR...</option>
-                {projects.map(p => (
+                <option value="1">SISTEMA_CENTRAL</option>
+                {projects.filter(p => String(p.id) !== "1").map(p => (
                   <option key={p.id} value={p.id}>{p.name.toUpperCase()}</option>
                 ))}
               </select>
@@ -117,12 +135,17 @@ function MemberModal({ isOpen, onClose, onSubmit, memberToEdit, projects = [] })
 }
 
 export default function Team() {
-  const { theme, isDarkMode } = useTheme(); // CONSUMIR TEMA
+  const { theme, isDarkMode } = useTheme(); 
   const projectContext = useProjects();
   const projects = projectContext?.projects || [];
-  const updateMemberStatus = projectContext?.updateMemberStatus;
-  const addMemberToProject = projectContext?.addMemberToProject;
+  
+  const globalUsers = projectContext?.globalUsers || [];
+  const fetchGlobalUsers = projectContext?.fetchGlobalUsers;
+  const addMemberToProject = projectContext?.addMemberToProject; 
   const updateMember = projectContext?.updateMember;
+  const updateMemberStatus = projectContext?.updateMemberStatus;
+  const deleteMember = projectContext?.deleteMember; // Nueva funcionalidad añadida
+  const fetchProjects = projectContext?.fetchProjects; 
 
   const { user: currentUser } = useAuth();
   const [searchTerm, setSearchTerm] = useState('');
@@ -130,39 +153,111 @@ export default function Team() {
   const [modalOpen, setModalOpen] = useState(false);
   const [editingMember, setEditingMember] = useState(null);
 
-  const isGlobalAdmin = currentUser?.email === 'admin@taskflow.com' || currentUser?.role === 'ADMIN';
+  const isGlobalAdmin = currentUser?.email === 'admin@taskflow.com' || 
+                        currentUser?.role === 'ADMIN' || 
+                        currentUser?.email === 'davidjesecoronelhinojosa@gmail.com';
+
+  useEffect(() => {
+    console.log("DEBUG AUTH:", { email: currentUser?.email, role: currentUser?.role, isGlobalAdmin });
+  }, [currentUser]);
+
+  useEffect(() => {
+    if (typeof fetchProjects === 'function') fetchProjects();
+    if (typeof fetchGlobalUsers === 'function') fetchGlobalUsers();
+  }, [fetchProjects, fetchGlobalUsers]);
 
   const allMembers = useMemo(() => {
-    return projects.flatMap(p => {
-      if (!p?.members) return [];
-      return p.members.map(m => {
-        const memberObj = typeof m === 'string' ? { email: m, role: 'EDITOR', status: 'ACTIVE' } : m;
+    if (Array.isArray(globalUsers) && globalUsers.length > 0) {
+      return globalUsers.map(u => {
+        const assignedProj = projects.find(p => String(p.id) === String(u.projectId)) || { name: 'SISTEMA_CENTRAL', id: '1' };
         return {
-          ...memberObj,
-          email: memberObj?.email || 'N/A',
-          status: memberObj?.status || 'ACTIVE', 
-          projectName: p.name || 'NODO_UNKN',
-          projectId: p.id,
-          isOwner: p.owner === memberObj.email,
-          projectOwnerEmail: p.owner 
+          id: u.id,
+          name: u.name || '',
+          email: u.email,
+          role: u.role || 'EDITOR',
+          status: u.status || 'ACTIVE',
+          projectName: assignedProj.name,
+          projectId: assignedProj.id,
+          isOwner: u.role === 'ADMIN'
         };
       });
+    }
+
+    return projects.flatMap(p => {
+      const projectStaff = [];
+      if (p.owner) {
+        projectStaff.push({
+          id: '',
+          name: '',
+          email: p.owner,
+          role: 'ADMIN',
+          status: p.status || 'ACTIVE',
+          projectName: p.name || 'SISTEMA_CENTRAL',
+          projectId: p.id,
+          isOwner: true,
+          projectOwnerEmail: p.owner
+        });
+      }
+      if (Array.isArray(p.members)) {
+        p.members.forEach(m => {
+          const isString = typeof m === 'string';
+          const targetEmail = isString ? m : (m?.email || m?.user_email || m?.name);
+          if (targetEmail && targetEmail !== p.owner) {
+            projectStaff.push({
+              id: m?.id || '',
+              name: m?.name || '',
+              email: targetEmail,
+              role: isString ? 'EDITOR' : (m?.role || 'EDITOR'),
+              status: isString ? 'ACTIVE' : (m?.status || 'ACTIVE'), 
+              projectName: p.name || 'SISTEMA_CENTRAL',
+              projectId: p.id,
+              isOwner: false,
+              projectOwnerEmail: p.owner 
+            });
+          }
+        });
+      }
+      return projectStaff;
     });
-  }, [projects]);
+  }, [projects, globalUsers]);
 
-  const filteredMembers = allMembers.filter(m => {
-    const matchesProject = filterProject === 'all' || String(m.projectId) === String(filterProject);
-    const matchesSearch = m.email.toLowerCase().includes(searchTerm.toLowerCase()) || 
-                          m.projectName.toLowerCase().includes(searchTerm.toLowerCase());
-    return matchesProject && matchesSearch;
-  });
+  const filteredMembers = useMemo(() => {
+    return allMembers.filter(m => {
+      const isAuthorized = isGlobalAdmin || 
+                           (currentUser?.projectId && String(m.projectId) === String(currentUser.projectId)) ||
+                           String(m.projectId) === "1"; 
+      
+      const projectScope = isGlobalAdmin ? filterProject : String(currentUser?.projectId || "all");
+      const matchesProject = projectScope === 'all' || String(m.projectId) === String(projectScope);
+      
+      const searchTermLower = searchTerm.toLowerCase();
+      const matchesSearch = (m.email || '').toLowerCase().includes(searchTermLower) || 
+                            (m.name || '').toLowerCase().includes(searchTermLower) || 
+                            (m.projectName || '').toLowerCase().includes(searchTermLower);
+      
+      return isAuthorized && matchesProject && matchesSearch;
+    });
+  }, [allMembers, filterProject, searchTerm, isGlobalAdmin, currentUser?.projectId]);
 
-  const handleToggleStatus = (projectId, memberEmail, currentStatus) => {
-    if (typeof updateMemberStatus !== 'function') return alert("Error: Función de actualización no disponible.");
-    if (currentStatus === 'INACTIVE' && !isGlobalAdmin) return alert("PROTOCOLO DENEGADO: Solo el ADMIN puede reactivar operativos.");
-    
+  const handleToggleStatus = async (projectId, memberIdOrEmail, currentStatus) => {
+    if (typeof updateMemberStatus !== 'function') return alert("Error: Operación no disponible.");
     const newStatus = currentStatus === 'ACTIVE' ? 'INACTIVE' : 'ACTIVE';
-    updateMemberStatus(projectId, memberEmail, newStatus);
+    
+    const targetUser = globalUsers.find(u => u.id === memberIdOrEmail || u.email === memberIdOrEmail);
+    
+    if (targetUser?.id) {
+      await updateMemberStatus(targetUser.id, newStatus);
+    } else {
+      await updateMemberStatus(projectId, memberIdOrEmail, newStatus);
+    }
+  };
+
+  const handleDelete = async (memberId) => {
+    if (window.confirm("¿Confirmar eliminación permanente del registro?")) {
+      if (typeof deleteMember === 'function') {
+        await deleteMember(memberId);
+      }
+    }
   };
 
   const openEditModal = (member) => {
@@ -170,11 +265,24 @@ export default function Team() {
     setModalOpen(true);
   };
 
-  const handleModalSubmit = (data) => {
+  const handleModalSubmit = async (data) => {
     if (editingMember) {
-      updateMember?.(editingMember.projectId, editingMember.email, { email: data.email, role: data.role.toUpperCase() });
+      if (editingMember.id) {
+        await updateMember?.(editingMember.id, { 
+          email: data.email, 
+          role: data.role.toUpperCase(), 
+          name: data.name 
+        });
+      } else {
+        await updateMember?.(editingMember.projectId, editingMember.email, { 
+          email: data.email, 
+          role: data.role.toUpperCase() 
+        });
+      }
     } else {
-      addMemberToProject?.(data.projectId, data.email);
+      if (typeof addMemberToProject === 'function') {
+        await addMemberToProject(data.email, data.role, data.name);
+      }
     }
     setEditingMember(null);
   };
@@ -182,7 +290,6 @@ export default function Team() {
   return (
     <div className="max-w-7xl mx-auto space-y-12 animate-in fade-in zoom-in-95 duration-1000 pb-20">
       
-      {/* HEADER */}
       <div className={`flex flex-col xl:flex-row justify-between items-start xl:items-end gap-10 pb-12 border-b relative ${isDarkMode ? 'border-slate-800/60' : 'border-slate-200'}`}>
         <div className="absolute -top-20 -left-20 w-80 h-80 bg-indigo-500/5 blur-[120px] rounded-full pointer-events-none" />
         <div className="space-y-4 relative z-10">
@@ -244,13 +351,13 @@ export default function Team() {
         </div>
       </div>
 
-      {/* STAFF LIST */}
       <div className="grid grid-cols-1 gap-6">
         {filteredMembers.length > 0 ? (
           filteredMembers.map((member, idx) => {
             const isInactive = member.status === 'INACTIVE';
-            const canManage = isGlobalAdmin || (currentUser?.email === member.projectOwnerEmail && !member.isOwner);
-            const initial = (member.email || "U")[0].toUpperCase();
+            const initial = (member.name || member.email || "U")[0].toUpperCase();
+            
+            const canEdit = isGlobalAdmin || (String(member.projectId) === String(currentUser?.projectId));
 
             return (
               <div 
@@ -270,18 +377,25 @@ export default function Team() {
                     {initial}
                   </div>
                   <div className="space-y-2">
-                    <div className="flex items-center gap-4">
-                      <span className={`font-black text-lg tracking-tighter uppercase transition-colors ${
-                        isInactive ? (isDarkMode ? 'text-slate-600' : 'text-slate-400') : theme.textMain
-                      }`}>
-                        {member.email}
-                      </span>
-                      {isInactive && (
-                        <div className={`flex items-center gap-1.5 border px-3 py-1 rounded-full ${isDarkMode ? 'bg-rose-950/30 border-rose-500/20' : 'bg-rose-50 border-rose-200'}`}>
-                           <span className="w-1.5 h-1.5 bg-rose-500 rounded-full animate-pulse" />
-                           <span className="text-[7px] text-rose-500 font-black tracking-widest uppercase">Disconnected</span>
-                        </div>
+                    <div className="flex flex-col">
+                      {member.name && (
+                        <span className={`text-[10px] font-black uppercase tracking-widest text-indigo-500 mb-0.5`}>
+                          {member.name}
+                        </span>
                       )}
+                      <div className="flex items-center gap-4">
+                        <span className={`font-black text-lg tracking-tighter uppercase transition-colors ${
+                          isInactive ? (isDarkMode ? 'text-slate-600' : 'text-slate-400') : theme.textMain
+                        }`}>
+                          {member.email}
+                        </span>
+                        {isInactive && (
+                          <div className={`flex items-center gap-1.5 border px-3 py-1 rounded-full ${isDarkMode ? 'bg-rose-950/30 border-rose-500/20' : 'bg-rose-50 border-rose-200'}`}>
+                             <span className="w-1.5 h-1.5 bg-rose-500 rounded-full animate-pulse" />
+                             <span className="text-[7px] text-rose-500 font-black tracking-widest uppercase">Disconnected</span>
+                          </div>
+                        )}
+                      </div>
                     </div>
                   </div>
                 </div>
@@ -310,32 +424,44 @@ export default function Team() {
                     </span>
                   </div>
 
-                  {canManage && member.email !== currentUser?.email && (
+                  {canEdit ? (
                     <div className={`flex items-center gap-3 pl-8 border-l ${isDarkMode ? 'border-slate-800/60' : 'border-slate-200'}`}>
                       <button 
                         onClick={() => openEditModal(member)}
                         className={`p-4 transition-all rounded-2xl border ${
-                            isInactive 
-                            ? 'text-slate-200 cursor-not-allowed opacity-20' 
-                            : isDarkMode 
-                                ? 'bg-slate-950 border-white/5 text-slate-400 hover:text-white hover:border-indigo-500' 
-                                : 'bg-white border-slate-200 text-slate-400 hover:text-indigo-600 hover:border-indigo-500 shadow-sm'
+                          isInactive 
+                          ? 'text-slate-200 cursor-not-allowed opacity-20' 
+                          : isDarkMode 
+                              ? 'bg-slate-950 border-white/5 text-slate-400 hover:text-white hover:border-indigo-500' 
+                              : 'bg-white border-slate-200 text-slate-400 hover:text-indigo-600 hover:border-indigo-500 shadow-sm'
                         }`}
                         disabled={isInactive}
                       >
                         <Edit3 size={20} />
                       </button>
                       <button 
-                        onClick={() => handleToggleStatus(member.projectId, member.email, member.status)}
+                        onClick={() => handleToggleStatus(member.projectId, member.id || member.email, member.status)}
                         className={`p-4 rounded-2xl transition-all border shadow-2xl ${
                           isInactive 
                           ? 'bg-emerald-500 text-white border-emerald-400 hover:bg-emerald-600' 
                           : 'bg-rose-50 border-rose-100 text-rose-500 hover:bg-rose-500 hover:text-white'
                         }`}
-                        title={isInactive ? "Reactivar Nodo" : "Desactivar Nodo"}
+                        title={isInactive ? "Reactivar Operativo" : "Desactivar Operativo"}
                       >
                         {isInactive ? <CheckCircle2 size={22} /> : <Power size={22} />}
                       </button>
+                      {isGlobalAdmin && (
+                        <button 
+                          onClick={() => handleDelete(member.id)}
+                          className="p-4 rounded-2xl transition-all border bg-slate-900 hover:bg-red-600 border-slate-800 text-white"
+                        >
+                          <Trash2 size={20} />
+                        </button>
+                      )}
+                    </div>
+                  ) : (
+                    <div className="pl-8 border-l border-transparent">
+                      <span className="text-[8px] font-black uppercase text-slate-400 opacity-50">SISTEMA_BLOQUEADO</span>
                     </div>
                   )}
                 </div>

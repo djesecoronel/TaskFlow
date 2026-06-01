@@ -19,7 +19,7 @@ export default function Projects() {
     updateProjectStatus, 
     deleteProject, 
     inviteMember,
-    addProject, // Importante para la inicialización
+    addProject, 
     isOwner = () => false 
   } = projectContext;
   
@@ -63,6 +63,18 @@ export default function Projects() {
     }
     setSelectedProject(project);
     setIsModalOpen(true);
+  };
+
+  // --- HANDLER DE BORRADO INTEGRADO ---
+  const handleDelete = async (projectId) => {
+    if (window.confirm("¿CONFIRMA ELIMINACIÓN PERMANENTE DEL NODO EN LA BASE DE DATOS?")) {
+      await deleteProject(projectId);
+    }
+  };
+
+  // --- HANDLER DE STATUS INTEGRADO ---
+  const handleStatusChange = async (projectId, newStatus) => {
+    await updateProjectStatus(projectId, newStatus);
   };
 
   if (projectContext.loading) {
@@ -166,7 +178,7 @@ export default function Projects() {
                   <select 
                     disabled={!userIsOwner}
                     value={project.status}
-                    onChange={(e) => updateProjectStatus(project.id, e.target.value)}
+                    onChange={(e) => handleStatusChange(project.id, e.target.value)}
                     className={`text-[8px] font-black px-5 py-2.5 rounded-full tracking-[0.2em] border-none outline-none cursor-pointer transition-all disabled:opacity-50 uppercase italic shadow-2xl ${
                       project.status === 'EN_PROGRESO' ? 'bg-indigo-600 text-white shadow-indigo-500/20' : 
                       project.status === 'COMPLETADO' ? 'bg-emerald-600 text-white shadow-emerald-500/20' : 
@@ -186,7 +198,7 @@ export default function Projects() {
                         <button onClick={() => handleEdit(project)} className="text-slate-500 hover:text-indigo-400 p-2 transition-all hover:scale-110">
                           <Pencil size={14} />
                         </button>
-                        <button onClick={() => deleteProject(project.id)} className="text-slate-500 hover:text-rose-500 p-2 transition-all hover:scale-110">
+                        <button onClick={() => handleDelete(project.id)} className="text-slate-500 hover:text-rose-500 p-2 transition-all hover:scale-110">
                           <Trash2 size={14} />
                         </button>
                       </div>

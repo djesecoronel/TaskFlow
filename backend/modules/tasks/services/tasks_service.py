@@ -26,6 +26,14 @@ class TaskService(ITaskService):
         self.current_theme = ThemeType.LIGHT
         # Patrón Adapter: Lista de destinos de notificación
         self.notifiers = []
+        # --- NUEVA FUNCIONALIDAD: CONTEXTO PARA EL PATRÓN STRATEGY ---
+        self._sort_strategy = None
+
+    # --- NUEVA FUNCIONALIDAD: MUTADOR DINÁMICO DE STRATEGY ---
+    def set_sort_strategy(self, strategy) -> None:
+        """Permite conmutar dinámicamente el algoritmo de ordenamiento"""
+        print(f"🎯 [STRATEGY_SET]: Nueva estrategia asignada -> {strategy.__class__.__name__}")
+        self._sort_strategy = strategy
 
     # --- MÉTODO PRIVADO: CONFIGURACIÓN DE LA CADENA ---
     def _get_validation_chain(self):
@@ -74,8 +82,7 @@ class TaskService(ITaskService):
                     if not v or len(str(v)) < 10:
                         continue
                 
-                # --- [MAPEO DE STATUS] ---
-                # Traducimos los títulos de las columnas del Front al Enum del Back
+                # --- [MAPEO DE STATUS PROTEGIDO] ---
                 if k == "status":
                     status_map = {
                         "Por hacer": "TO_DO",
@@ -83,6 +90,7 @@ class TaskService(ITaskService):
                         "En revisión": "ON_REVIEW",
                         "Completado": "DONE"
                     }
+                    # Si no es un valor mapeado, enviamos el valor crudo original (seguridad)
                     clean_data[k] = status_map.get(v, v)
                 else:
                     clean_data[k] = v
@@ -151,6 +159,26 @@ class TaskService(ITaskService):
             except Exception as e:
                 print(f"⚠️ [ADAPTER_ERR]: {e}")
 
+    # --- NUEVA FUNCIONALIDAD: MÉTODOS NATIVOS DEL PATRÓN OBSERVER ---
+    def attach(self, observer) -> None:
+        """Registra un nuevo observador (Mapeado a tu lógica de notifiers)"""
+        self.add_notifier(observer)
+
+    def detach(self, observer) -> None:
+        """Elimina un observador del ecosistema"""
+        if observer in self.notifiers:
+            self.notifiers.remove(observer)
+
+    def notify_observers(self, event_type: str, task_data: dict) -> None:
+        """Dispara de forma reactiva la actualización del Observer"""
+        print(f"🔔 [OBSERVER_NOTIFY]: Emitiendo evento {event_type}")
+        for observer in self.notifiers:
+            try:
+                if hasattr(observer, 'update'):
+                    observer.update(event_type, task_data)
+            except Exception as e:
+                print(f"⚠️ [OBSERVER_ERR]: Fallo en actualización -> {e}")
+
     # --- BRIDGE LOGIC: IMPLEMENTACIÓN BINARIA ---
     def generate_report(self, format_type="pdf"):
         """
@@ -192,7 +220,14 @@ class TaskService(ITaskService):
 
     def get_all_tasks(self):
         """Patrón Facade: Interfaz simple para obtener todos los datos"""
-        return self.repository.get_all()
+        tasks = self.repository.get_all()
+        
+        # --- ENCHUFE DEL PATRÓN STRATEGY ---
+        # Si hay una estrategia activa, procesa y ordena la colección de forma dinámica
+        if self._sort_strategy and tasks:
+            tasks = self._sort_strategy.sort(tasks)
+            
+        return tasks
 
     def create_task(self, data):
         """
@@ -209,7 +244,13 @@ class TaskService(ITaskService):
         # Disparo de notificación vía Adapters tras creación (Soporte dinámico)
         self._notify_all("NUEVA_TAREA", f"Se ha creado la tarea: {task.title}", data.get('assigned_to'))
         
-        return self.repository.create(self._clean_for_repo(task.to_dict()))
+        # --- LANZAMIENTO OBSERVER ---
+        self.notify_observers("TASK_CREATED", task.to_dict())
+        
+        # --- BLINDAJE DE PERSISTENCIA ---
+        result = self.repository.create(self._clean_for_repo(task.to_dict()))
+        print(f"✅ [KERNEL_CONFIRM]: Tarea creada en BD: {result}")
+        return result
 
     def create_advanced_task(self, data):
         """
@@ -250,7 +291,13 @@ class TaskService(ITaskService):
         # Disparo de notificación vía Adapters tras construcción avanzada
         self._notify_all("TAREA_AVANZADA", f"Creada con Builder: {task.title}", data.get('assigned_to'))
         
-        return self.repository.create(self._clean_for_repo(task_data))
+        # --- LANZAMIENTO OBSERVER ---
+        self.notify_observers("TASK_BUILDER_COMPLETED", task_data)
+        
+        # --- NUEVA FUNCIONALIDAD: ECHO-LOGGING ---
+        result = self.repository.create(self._clean_for_repo(task_data))
+        print(f"✅ [REALTIME_ECHO]: Task avanzada creada con ID: {result}")
+        return result
 
     def get_task(self, task_id):
         data = self.repository.get_by_id(task_id)
@@ -261,7 +308,6 @@ class TaskService(ITaskService):
     def update_task(self, task_id, data):
         """
         PROTOCOL UPDATE: Sincroniza la mutación de la unidad con el Nodo Central.
-        CORRECCIÓN: Se inyecta la limpieza para asegurar compatibilidad Supabase.
         """
         task = self.get_task(task_id)
         if not task:
@@ -269,15 +315,29 @@ class TaskService(ITaskService):
         
         print(f"🔄 [KERNEL_MUTATION]: Procesando cambios para unidad {task_id}")
         
-        # Pasamos los datos por el filtro de limpieza (assignedTo -> assigned_to, etc.)
         clean_data = self._clean_for_repo(data)
         
-        return self.repository.update(task_id, clean_data)
+        # --- LANZAMIENTO OBSERVER ---
+        self.notify_observers("TASK_UPDATED", clean_data)
+        
+        result = self.repository.update(task_id, clean_data)
+        
+        # --- NUEVA FUNCIONALIDAD: ECHO-LOGGING ---
+        print(f"✅ [REALTIME_ECHO]: Update confirmado en BD para ID {task_id}")
+        return result
 
     def delete_task(self, task_id):
         """CORRECCIÓN: Implementación del borrado físico en el Nodo Central"""
         print(f"🧨 [KERNEL_PURGE]: Solicitando eliminación definitiva de {task_id}")
-        return self.repository.delete(task_id)
+        
+        # --- LANZAMIENTO OBSERVER ---
+        self.notify_observers("TASK_DELETED", {"id": task_id})
+        
+        result = self.repository.delete(task_id)
+        
+        # --- NUEVA FUNCIONALIDAD: ECHO-LOGGING ---
+        print(f"✅ [REALTIME_ECHO]: Purga finalizada para ID {task_id}")
+        return result
 
     # --- [RE-ACTIVADO: PROTOCOLO ADAPTER CON AUDITORÍA] ---
     def notify_and_log(self, task_id, recipient):
@@ -300,7 +360,6 @@ class TaskService(ITaskService):
         # 3. REGISTRO DE AUDITORÍA (Cierre de circuito)
         if task_id:
             log_msg = f"📢 [ADAPTER_SYNC]: Notificación enviada a {recipient} para la unidad '{task_title}'"
-            # Aprovechamos el método add_comment que ya actualiza la DB
             self.add_comment(task_id, log_msg)
             print(f"✅ [KERNEL_AUDIT]: Transmisión registrada en el historial del Nodo {task_id}")
 
@@ -311,7 +370,7 @@ class TaskService(ITaskService):
         }
 
     def move_task(self, task_id, column_id):
-        """Lógica de negocio para el movimiento entre columnas Kanban"""
+        """Lógica de negocio optimizada para el movimiento entre columnas Kanban"""
         task = self.get_task(task_id)
         if not task:
             return None
@@ -320,11 +379,19 @@ class TaskService(ITaskService):
         task.column_id = column_id
         task.history.append(f"LOG: Movido de col_{old_column} a col_{column_id} en {datetime.now().isoformat()}")
         
-        # Notificación de movimiento dirigida al operativo
         self._notify_all("MOVIMIENTO_TAREA", f"Unidad {task_id} movida a {column_id}", getattr(task, 'assigned_to', None))
         
-        self.repository.update(task_id, self._clean_for_repo({"status": column_id}))
-        return task.history
+        # --- LANZAMIENTO OBSERVER ---
+        self.notify_observers("TASK_MOVED", {"id": task_id, "column_id": column_id})
+        
+        # --- OPTIMIZACIÓN: Enviamos el objeto completo para asegurar sincronía de estado ---
+        full_data = task.to_dict()
+        full_data["column_id"] = column_id
+        full_data["status"] = column_id # Aseguramos que el estado refleje la columna
+        
+        result = self.repository.update(task_id, self._clean_for_repo(full_data))
+        print(f"✅ [REALTIME_ECHO]: Movimiento a {column_id} registrado en BD.")
+        return result
 
     def add_comment(self, task_id, comment):
         task = self.get_task(task_id)
@@ -339,8 +406,10 @@ class TaskService(ITaskService):
         task.comments.append(new_comment)
         task.history.append(f"LOG: Comentario añadido")
         
-        self.repository.update(task_id, self._clean_for_repo(task.to_dict()))
-        return task.comments
+        # --- LANZAMIENTO OBSERVER ---
+        self.notify_observers("COMMENT_ADDED", {"id": task_id, "comment": comment})
+        
+        return self.repository.update(task_id, self._clean_for_repo(task.to_dict()))
 
     def add_time_log(self, task_id, hours):
         task = self.get_task(task_id)
@@ -353,8 +422,11 @@ class TaskService(ITaskService):
         }
         
         task.time_logs.append(new_log)
-        self.repository.update(task_id, self._clean_for_repo(task.to_dict()))
-        return task.time_logs
+        
+        # --- LANZAMIENTO OBSERVER ---
+        self.notify_observers("TIME_LOGGED", {"id": task_id, "hours": hours})
+        
+        return self.repository.update(task_id, self._clean_for_repo(task.to_dict()))
 
     def add_attachment(self, task_id, file):
         task = self.get_task(task_id)
@@ -362,8 +434,11 @@ class TaskService(ITaskService):
             return None
         
         task.add_attachment(file)
-        self.repository.update(task_id, self._clean_for_repo(task.to_dict()))
-        return task
+        
+        # --- LANZAMIENTO OBSERVER ---
+        self.notify_observers("ATTACHMENT_ADDED", {"id": task_id, "file": str(file)})
+        
+        return self.repository.update(task_id, self._clean_for_repo(task.to_dict()))
 
     def clone_task(self, task_id):
         """
@@ -375,7 +450,6 @@ class TaskService(ITaskService):
         if not task:
             return None
 
-        # Ejecutamos el método clone() del prototipo
         new_task_obj = task.clone()
         new_task_data = new_task_obj.to_dict()
         
@@ -383,10 +457,14 @@ class TaskService(ITaskService):
         new_task_data.pop('id', None)
         new_task_data.pop('task_id', None)
         
-        # Modificamos el título para diferenciarlo
         new_task_data["title"] = f"{new_task_data.get('title', 'Copia')} (Clone)"
 
-        return self.repository.create(self._clean_for_repo(new_task_data))
+        # --- LANZAMIENTO OBSERVER ---
+        self.notify_observers("TASK_CLONED", {"source_id": task_id})
+
+        result = self.repository.create(self._clean_for_repo(new_task_data))
+        print(f"✅ [REALTIME_ECHO]: Clonación completada para ID {task_id}")
+        return result
 
     def get_deadline_hours(self, task_id):
         """
@@ -443,9 +521,37 @@ class TaskService(ITaskService):
         decorated_task = EmergencyDecorator(task)
         task.history.append(f"DECORATOR_LOG: Tarea elevada a EMERGENCIA el {datetime.now().isoformat()}")
         
-        # Notificación con destinatario real
         self._notify_all("ALERTA_CRITICA", f"La tarea {task_id} ha sido marcada como EMERGENCIA.", getattr(task, 'assigned_to', None))
+        
+        # --- LANZAMIENTO OBSERVER ---
+        self.notify_observers("TASK_EMERGENCY", {"id": task_id})
         
         return self.repository.update(task_id, self._clean_for_repo(decorated_task.to_dict()))
     
-    
+    # --- [NUEVA FUNCIONALIDAD: GESTIÓN DE OPERATIVOS (SUPABASE SYNC)] ---
+
+    def get_all_users(self):
+        """Recupera la lista de operativos desde la tabla 'users'."""
+        print("🔍 [KERNEL_QUERY]: Accediendo a directorio de operativos...")
+        return self.repository.get_all_users()
+
+    def add_member(self, user_data):
+        """Inyecta un nuevo operativo en el nodo central."""
+        print(f"➕ [DB_SYNC]: Desplegando nuevo operativo {user_data.get('email')}")
+        result = self.repository.create_user(user_data)
+        self.notify_observers("MEMBER_ADDED", user_data)
+        return result
+
+    def update_member_status(self, user_id, status):
+        """Modifica el estado operativo de un registro en la base de datos."""
+        print(f"🔄 [DB_SYNC]: Actualizando estatus del operativo {user_id} a {status}")
+        result = self.repository.update_user_status(user_id, status)
+        self.notify_observers("MEMBER_STATUS_CHANGED", {"id": user_id, "status": status})
+        return result
+
+    def delete_member(self, user_id):
+        """Purga un registro de operativo del repositorio central."""
+        print(f"🧨 [KERNEL_PURGE]: Eliminando operativo {user_id} del ecosistema.")
+        result = self.repository.delete_user(user_id)
+        self.notify_observers("MEMBER_DELETED", {"id": user_id})
+        return result

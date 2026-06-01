@@ -66,11 +66,18 @@ export const AuthProvider = ({ children }) => {
       if (!token) throw new Error("PROTOCOL_ERROR: Token no recibido");
 
       axios.defaults.headers.common['Authorization'] = `Bearer ${token}`;
-      setUser(realUser);
-      localStorage.setItem('tf_token', token);
-      localStorage.setItem('tf_user', JSON.stringify(realUser));
       
-      console.log(`%c KERNEL_AUTH: Acceso concedido para operativo -> ${realUser.email} `, "color: #10b981; font-weight: bold;");
+      // Aseguramos que el usuario tenga el projectId del servidor
+      const userWithProject = {
+        ...realUser,
+        projectId: realUser.projectId || realUser.project_id // Normalización por si acaso
+      };
+
+      setUser(userWithProject);
+      localStorage.setItem('tf_token', token);
+      localStorage.setItem('tf_user', JSON.stringify(userWithProject));
+      
+      console.log(`%c KERNEL_AUTH: Acceso concedido para operativo -> ${userWithProject.email} (PID: ${userWithProject.projectId})`, "color: #10b981; font-weight: bold;");
       return response.data;
 
     } catch (error) {
@@ -88,17 +95,24 @@ export const AuthProvider = ({ children }) => {
         email: formData.email,
         password: formData.password,
         name: formData.name,
-        role: formData.role || 'DEVELOPER'
+        role: formData.role || 'DEVELOPER',
+        projectId: formData.projectId // Inyectamos el projectId al registrar
       });
 
       const { user: newUser, token } = response.data;
 
       if (token) {
         axios.defaults.headers.common['Authorization'] = `Bearer ${token}`;
-        setUser(newUser);
+        
+        const userWithProject = {
+            ...newUser,
+            projectId: newUser.projectId || formData.projectId
+        };
+
+        setUser(userWithProject);
         localStorage.setItem('tf_token', token);
-        localStorage.setItem('tf_user', JSON.stringify(newUser));
-        console.log(`%c ✅ KERNEL_AUTH: Operativo ${newUser.email} registrado y sincronizado. `, "color: #10b981; font-weight: bold;");
+        localStorage.setItem('tf_user', JSON.stringify(userWithProject));
+        console.log(`%c ✅ KERNEL_AUTH: Operativo ${userWithProject.email} registrado y sincronizado. `, "color: #10b981; font-weight: bold;");
       }
 
       return response.data;
@@ -131,7 +145,7 @@ export const AuthProvider = ({ children }) => {
     <AuthContext.Provider value={{ 
       user, 
       login, 
-      register, // <--- EXPOSICIÓN DE LA NUEVA FUNCIÓN
+      register, 
       logout, 
       updateProfile, 
       loading,
