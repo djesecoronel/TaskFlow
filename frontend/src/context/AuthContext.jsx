@@ -4,7 +4,7 @@ import axios from 'axios';
 const AuthContext = createContext();
 
 // CONFIGURACIÓN DINÁMICA DEL NODO CENTRAL
-const API_URL = "http://192.168.40.53:5000/api/auth";
+const API_URL = "http://127.0.0.1:5000/api/auth";
 
 export const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(null);
