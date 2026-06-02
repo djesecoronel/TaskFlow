@@ -233,6 +233,7 @@ class TaskService(ITaskService):
         """
         Patrón Factory Method validado por Chain of Responsibility.
         """
+        print(f"📋 [COMMAND_EXEC]: Invocando comando CREATE_TASK")
         validation_result = self._get_validation_chain().handle(data)
         if validation_result is not True:
             return validation_result 
@@ -294,6 +295,7 @@ class TaskService(ITaskService):
         """
         Patrón Builder validado por Chain of Responsibility.
         """
+        print(f"📋 [COMMAND_EXEC]: Invocando comando CREATE_ADVANCED_TASK")
         validation_result = self._get_validation_chain().handle(data)
         if validation_result is not True:
             return validation_result
@@ -351,6 +353,7 @@ class TaskService(ITaskService):
         """
         PROTOCOL UPDATE: Sincroniza la mutación de la unidad con el Nodo Central.
         """
+        print(f"📋 [COMMAND_EXEC]: Invocando comando UPDATE_TASK [{task_id}]")
         task = self.get_task(task_id)
         if not task:
             return None
@@ -370,6 +373,7 @@ class TaskService(ITaskService):
 
     def delete_task(self, task_id):
         """CORRECCIÓN: Implementación del borrado físico en el Nodo Central"""
+        print(f"📋 [COMMAND_EXEC]: Invocando comando DELETE_TASK [{task_id}]")
         print(f"🧨 [KERNEL_PURGE]: Solicitando eliminación definitiva de {task_id}")
         
         # --- LANZAMIENTO OBSERVER ---
@@ -413,6 +417,7 @@ class TaskService(ITaskService):
 
     def move_task(self, task_id, column_id):
         """Lógica de negocio optimizada para el movimiento entre columnas Kanban"""
+        print(f"📋 [COMMAND_EXEC]: Invocando comando MOVE_TASK [{task_id}]")
         task = self.get_task(task_id)
         if not task:
             return None
@@ -487,6 +492,7 @@ class TaskService(ITaskService):
         Patrón Prototype: Clonación profunda de tareas.
         Se limpia el ID para que Supabase genere un nuevo UUID automáticamente.
         """
+        print(f"📋 [COMMAND_EXEC]: Invocando comando CLONE_TASK [{task_id}]")
         print(f"🧬 [PROTOTYPE]: Iniciando clonación de unidad {task_id}")
         task = self.get_task(task_id)
         if not task:
@@ -579,6 +585,7 @@ class TaskService(ITaskService):
 
     def add_member(self, user_data):
         """Inyecta un nuevo operativo en el nodo central."""
+        print(f"📋 [COMMAND_EXEC]: Invocando comando ADD_MEMBER")
         print(f"➕ [DB_SYNC]: Desplegando nuevo operativo {user_data.get('email')}")
         result = self.repository.create_user(user_data)
         self.notify_observers("MEMBER_ADDED", user_data)
@@ -586,6 +593,7 @@ class TaskService(ITaskService):
 
     def update_member_status(self, user_id, status):
         """Modifica el estado operativo de un registro en la base de datos."""
+        print(f"📋 [COMMAND_EXEC]: Invocando comando UPDATE_MEMBER_STATUS")
         print(f"🔄 [DB_SYNC]: Actualizando estatus del operativo {user_id} a {status}")
         result = self.repository.update_user_status(user_id, status)
         self.notify_observers("MEMBER_STATUS_CHANGED", {"id": user_id, "status": status})
@@ -593,6 +601,7 @@ class TaskService(ITaskService):
 
     def delete_member(self, user_id):
         """Purga un registro de operativo del repositorio central."""
+        print(f"📋 [COMMAND_EXEC]: Invocando comando DELETE_MEMBER")
         print(f"🧨 [KERNEL_PURGE]: Eliminando operativo {user_id} del ecosistema.")
         result = self.repository.delete_user(user_id)
         self.notify_observers("MEMBER_DELETED", {"id": user_id})
