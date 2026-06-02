@@ -60,6 +60,9 @@ export const ProjectProvider = ({ children }) => {
 
   // --- NUEVA FUNCIONALIDAD: ALMACENAMIENTO DE USUARIOS DE LA TABLA GLOBAL DE SUPABASE ---
   const [globalUsers, setGlobalUsers] = useState([]);
+  
+  // --- [BLOQUEO DE PROCESAMIENTO PARA EVITAR DUPLICADOS] ---
+  const processingRef = useRef(new Set());
 
   // Registro automático de un observador interno de auditoría como ejemplo del patrón
   useEffect(() => {
@@ -92,8 +95,11 @@ export const ProjectProvider = ({ children }) => {
              }));
              setTrigger(prev => prev + 1); // Forzar render
           } else if (payload.eventType === 'INSERT') {
-             globalProjectSubject.notify('TASK_ADDED_REALTIME', payload.new);
-             initializeCore();
+             // Evitar doble actualización si ya tenemos el estado local
+             if (!projects.flatMap(p => p.tasks).find(t => t.id === payload.new.id)) {
+                globalProjectSubject.notify('TASK_ADDED_REALTIME', payload.new);
+                initializeCore();
+             }
           } else if (payload.eventType === 'DELETE') {
              globalProjectSubject.notify('TASK_DELETED_REALTIME', payload.old);
              initializeCore();
@@ -105,7 +111,7 @@ export const ProjectProvider = ({ children }) => {
     return () => {
       supabase.removeChannel(channel);
     };
-  }, []);
+  }, [projects]); // Dependencia necesaria para verificar existencia
 
   // --- [OBSERVADOR DE TIEMPO REAL - USERS] ---
   useEffect(() => {
@@ -465,13 +471,19 @@ const deleteProject = async (projectId) => {
   };
 
 const addTask = async (projectId, taskData) => {
-  saveSnapshot();
   const currentUserId = user?.id || user?.user_id;
 
   if (!currentUserId) {
     addNotification('SYSTEM', 'ERROR: Identidad de operativo no detectada');
     return;
   }
+
+  // --- [ESCUDO ANTIDUPLICIDAD INTEGRADO] ---
+  const taskKey = `${projectId}-${taskData.title}`;
+  if (processingRef.current.has(taskKey)) return;
+  processingRef.current.add(taskKey);
+
+  saveSnapshot();
 
   try {
     const { data, error } = await supabase
@@ -483,7 +495,7 @@ const addTask = async (projectId, taskData) => {
         project_id: projectId,
         user_id: currentUserId,
         priority: taskData.priority || 'MEDIUM',
-        type: taskData.type || 'TASK' // <--- NUEVA FUNCIONALIDAD: Persistencia del tipo de tarea
+        type: taskData.type || 'TASK' 
       }])
       .select()
       .single();
@@ -511,8 +523,10 @@ const addTask = async (projectId, taskData) => {
   } catch (error) {
     console.error("TASK_SYNC_ERROR", error);
     addNotification('ERROR', 'Fallo al crear la tarea en la base de datos');
+  } finally {
+    setTimeout(() => processingRef.current.delete(taskKey), 2000);
   }
-};  
+}; 
 
   const updateTask = async (projectId, taskId, updatedData) => {
     saveSnapshot();

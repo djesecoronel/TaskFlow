@@ -28,6 +28,8 @@ class TaskService(ITaskService):
         self.notifiers = []
         # --- NUEVA FUNCIONALIDAD: CONTEXTO PARA EL PATRÓN STRATEGY ---
         self._sort_strategy = None
+        # --- [FIX IDEMPOTENCIA]: Guardia para evitar duplicidad de ejecución ---
+        self._processed_requests = set()
 
     # --- NUEVA FUNCIONALIDAD: MUTADOR DINÁMICO DE STRATEGY ---
     def set_sort_strategy(self, strategy) -> None:
@@ -261,6 +263,12 @@ class TaskService(ITaskService):
         """
         Versión unificada con auditoría total, incluyendo el disparador del patrón COMMAND.
         """
+        # --- GUARDIA DE IDEMPOTENCIA ---
+        request_fingerprint = f"{project_id}_{data.get('title')}"
+        if request_fingerprint in self._processed_requests:
+            return {"status": "ALREADY_PROCESSING", "msg": "Solicitud duplicada ignorada"}
+        self._processed_requests.add(request_fingerprint)
+
         # 1. INTEGRACIÓN DEL COMANDO (Disparador de auditoría)
         print(f"📋 [COMMAND_EXEC]: Invocando comando para crear tarea en proyecto {project_id}")
         
@@ -272,6 +280,7 @@ class TaskService(ITaskService):
         # 3. VALIDACIÓN: Dispara logs de Chain of Responsibility
         validation_result = self._get_validation_chain().handle(data)
         if validation_result is not True:
+            self._processed_requests.remove(request_fingerprint)
             return validation_result 
 
         # 4. FACTORY: Construcción del objeto
@@ -289,6 +298,8 @@ class TaskService(ITaskService):
         
         # 8. ECHO-LOGGING
         print(f"✅ [KERNEL_CONFIRM]: Tarea creada en proyecto {project_id} | ID: {result.get('id')}")
+        
+        self._processed_requests.remove(request_fingerprint)
         return result
 
     def create_advanced_task(self, data):

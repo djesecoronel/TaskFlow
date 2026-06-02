@@ -108,6 +108,9 @@ project_ns = Namespace('projects', description='Operaciones de Proyectos')
 class ProjectTasks(Resource):
     def post(self, project_id):
         data = request.json
+        # --- [ESCUDO DE SEGURIDAD CONTRA DUPLICIDAD HUÉRFANA] ---
+        if not project_id:
+            return {"error": "Invalid project context"}, 400
         result = service.create_task_in_project(project_id, data)
         return result, 201
 
@@ -174,6 +177,9 @@ class TaskList(Resource):
     @task_ns.expect(task_model)
     def post(self):
         data = request.json
+        # --- [PREVENCIÓN DE TAREAS HUÉRFANAS] ---
+        if not data.get('project_id'):
+            return {"error": "Project ID required"}, 400
         if not data.get('type'): data['type'] = 'TASK'
         cmd = CreateTaskCommand(facade, data)
         result = command_invoker.execute_command(cmd)
