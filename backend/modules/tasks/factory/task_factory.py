@@ -98,7 +98,11 @@ class TaskFactory:
             except:
                 priority = PriorityTask.Medium
 
-        return factory_cls(
+        # --- CORRECCIÓN: Inyectamos explícitamente el valor serializable del tipo ---
+        kwargs["type"] = task_type.value if hasattr(task_type, 'value') else task_type
+
+        # Creamos la instancia
+        task_instance = factory_cls(
             task_id=task_id, 
             title=title, 
             description=description, 
@@ -107,6 +111,12 @@ class TaskFactory:
             priority=priority, 
             **kwargs
         )
+        
+        # --- [BLINDAJE DE ESCRITURA]: Forzar tipo en la instancia final ---
+        # Esto asegura que si el __init__ del modelo lo reseteara, lo corregimos aquí
+        task_instance.type = kwargs["type"]
+        
+        return task_instance
         
     @staticmethod
     def from_dict(data):
@@ -119,6 +129,7 @@ class TaskFactory:
 
         # Sincronización de llaves de persistencia: Supabase 'id' -> Kernel 'task_id'
         task_id = data.get("id") or data.get("task_id")
+        # Aseguramos que 'type' no sea nulo al venir del dict
         task_type = data.get("type") or "TASK"
         title = data.get("title") or "SIN_TITULO"
         description = data.get("description") or ""
@@ -139,7 +150,6 @@ class TaskFactory:
             "status": data.get("status") or "TO_DO",
             "priority": data.get("priority") or "MEDIA",
             "user_id": data.get("user_id"), # ANCLAJE CRÍTICO DE OPERATIVO
-            "assignedTo": data.get("assignedTo"), # <--- AÑADIDO: VÍNCULO DE RESPONSABILIDAD
             "column_id": data.get("column_id"),
             "comments": data.get("comments") or [],
             "history": data.get("history") or [],
@@ -147,7 +157,8 @@ class TaskFactory:
             "attachments": data.get("attachments") or [],
             "parent_task": data.get("parent_task"), # <--- AÑADIDO: PROTOCOLO COMPOSITE
             "subtasks": data.get("subtasks") or [],  # <--- AÑADIDO: RECURSIÓN COMPOSITE
-            "theme": data.get("theme") or ThemeType.LIGHT.value 
+            "theme": data.get("theme") or ThemeType.LIGHT.value,
+            "project_id": data.get("project_id") # Aseguramos persistencia de project_id
         }
 
         # Preservar estilos visuales si existen en el snapshot de datos

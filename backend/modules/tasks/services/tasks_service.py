@@ -239,6 +239,10 @@ class TaskService(ITaskService):
 
         data["theme"] = self.current_theme.value
         
+        # --- BLINDAJE DE TIPO ---
+        if "type" not in data or not data["type"]:
+            data["type"] = "TASK"
+        
         task = TaskFactory.from_dict(data)
         
         # Disparo de notificación vía Adapters tras creación (Soporte dinámico)
@@ -252,6 +256,40 @@ class TaskService(ITaskService):
         print(f"✅ [KERNEL_CONFIRM]: Tarea creada en BD: {result}")
         return result
 
+    def create_task_in_project(self, project_id, data):
+        """
+        Versión unificada con auditoría total, incluyendo el disparador del patrón COMMAND.
+        """
+        # 1. INTEGRACIÓN DEL COMANDO (Disparador de auditoría)
+        print(f"📋 [COMMAND_EXEC]: Invocando comando para crear tarea en proyecto {project_id}")
+        
+        # 2. Aseguramos integridad de datos
+        data["project_id"] = int(project_id)
+        if "type" not in data or not data["type"]:
+            data["type"] = "TASK"
+            
+        # 3. VALIDACIÓN: Dispara logs de Chain of Responsibility
+        validation_result = self._get_validation_chain().handle(data)
+        if validation_result is not True:
+            return validation_result 
+
+        # 4. FACTORY: Construcción del objeto
+        data["theme"] = self.current_theme.value
+        task = TaskFactory.from_dict(data)
+        
+        # 5. ADAPTER: Notificación (Broadcast)
+        self._notify_all("NUEVA_TAREA_PROYECTO", f"Tarea '{task.title}' creada en proyecto {project_id}", data.get('assigned_to'))
+        
+        # 6. OBSERVER: Notificación reactiva
+        self.notify_observers("TASK_CREATED_IN_PROJECT", task.to_dict())
+        
+        # 7. REPOSITORY: Persistencia (con limpieza)
+        result = self.repository.create(self._clean_for_repo(task.to_dict()))
+        
+        # 8. ECHO-LOGGING
+        print(f"✅ [KERNEL_CONFIRM]: Tarea creada en proyecto {project_id} | ID: {result.get('id')}")
+        return result
+
     def create_advanced_task(self, data):
         """
         Patrón Builder validado por Chain of Responsibility.
@@ -259,6 +297,10 @@ class TaskService(ITaskService):
         validation_result = self._get_validation_chain().handle(data)
         if validation_result is not True:
             return validation_result
+
+        # --- BLINDAJE DE TIPO ---
+        if "type" not in data or not data["type"]:
+            data["type"] = "TASK"
 
         builder = TaskBuilder()
         

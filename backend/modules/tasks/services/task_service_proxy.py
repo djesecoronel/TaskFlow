@@ -31,6 +31,13 @@ class TaskServiceProxy(ITaskService):
         self._log_access("CREATE_UNIT", f"Título: {data.get('title')}")
         return self._real_service.create_task(data)
 
+    def create_task_in_project(self, project_id, data):
+        """
+        [NUEVA FUNCIONALIDAD]: Delegación de creación de tareas vinculadas a proyecto.
+        """
+        self._log_access("CREATE_TASK_IN_PROJECT", f"Proyecto: {project_id} | Título: {data.get('title')}")
+        return self._real_service.create_task_in_project(project_id, data)
+
     def create_advanced_task(self, data):
         self._log_access("BUILDER_SEQUENCE", "Iniciando construcción de unidad compleja")
         return self._real_service.create_advanced_task(data)

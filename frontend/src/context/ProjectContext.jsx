@@ -85,10 +85,10 @@ export const ProjectProvider = ({ children }) => {
           if (payload.eventType === 'UPDATE') {
              globalProjectSubject.notify('TASK_UPDATED_REALTIME', payload.new);
              setProjects(prev => prev.map(proj => {
-                if (String(proj.id) === String(payload.new.project_id)) {
-                    return { ...proj, tasks: proj.tasks.map(t => t.id === payload.new.id ? payload.new : t) };
-                }
-                return proj;
+               if (String(proj.id) === String(payload.new.project_id)) {
+                   return { ...proj, tasks: proj.tasks.map(t => String(t.id) === String(payload.new.id) ? payload.new : t) };
+               }
+               return proj;
              }));
              setTrigger(prev => prev + 1); // Forzar render
           } else if (payload.eventType === 'INSERT') {
@@ -339,7 +339,7 @@ export const ProjectProvider = ({ children }) => {
           
           setProjects(prev => prev.map(p => {
               if (p.id === String(projectId)) {
-                  const tasks = p.tasks.filter(t => t.id !== taskId);
+                  const tasks = p.tasks.filter(t => String(t.id) !== String(taskId));
                   return { ...p, tasks, progress: calculateProgress(tasks) };
               }
               return p;
@@ -449,7 +449,7 @@ const deleteProject = async (projectId) => {
         if (error) throw error;
 
         setProjects(prev => {
-          const updated = prev.filter(proj => proj.id !== String(projectId));
+          const updated = prev.filter(proj => String(proj.id) !== String(projectId));
           globalProjectSubject.notify('PROJECT_DELETED', { id: projectId, all: updated });
           return updated;
         });
@@ -474,7 +474,6 @@ const addTask = async (projectId, taskData) => {
   }
 
   try {
-    // Se eliminó assigned_to para evitar error PGRST204
     const { data, error } = await supabase
       .from('tasks')
       .insert([{
@@ -483,7 +482,8 @@ const addTask = async (projectId, taskData) => {
         status: taskData.status || 'col-1',
         project_id: projectId,
         user_id: currentUserId,
-        priority: taskData.priority || 'MEDIUM'
+        priority: taskData.priority || 'MEDIUM',
+        type: taskData.type || 'TASK' // <--- NUEVA FUNCIONALIDAD: Persistencia del tipo de tarea
       }])
       .select()
       .single();
@@ -491,7 +491,7 @@ const addTask = async (projectId, taskData) => {
     if (error) throw error;
 
     setProjects(prev => prev.map(proj => {
-      if (proj.id === String(projectId)) {
+      if (String(proj.id) === String(projectId)) {
         const updatedTasks = [...(proj.tasks || []), data];
         const updatedProj = { 
           ...proj, 
@@ -512,7 +512,7 @@ const addTask = async (projectId, taskData) => {
     console.error("TASK_SYNC_ERROR", error);
     addNotification('ERROR', 'Fallo al crear la tarea en la base de datos');
   }
-};
+};  
 
   const updateTask = async (projectId, taskId, updatedData) => {
     saveSnapshot();
@@ -531,9 +531,9 @@ const addTask = async (projectId, taskData) => {
       if (error) throw error;
 
       setProjects(prev => prev.map(proj => {
-        if (proj.id === String(projectId)) {
+        if (String(proj.id) === String(projectId)) {
           const updatedTasks = proj.tasks.map(t => 
-            (t.id === taskId) ? synchronizedTask : t
+            (String(t.id) === String(taskId)) ? synchronizedTask : t
           );
           const updatedProj = { 
             ...proj, 
@@ -562,7 +562,6 @@ const addTask = async (projectId, taskData) => {
     console.log(`%c 🌿 [COMPOSITE_INIT]: Ramificando subtarea bajo nodo padre ${parentId}... `, "color: #10b981; font-weight: bold;");
 
     try {
-      // Usamos el mismo patrón de limpieza de campos
       const payload = {
         title: subtaskData.title,
         description: subtaskData.description,
@@ -576,7 +575,7 @@ const addTask = async (projectId, taskData) => {
       const savedSubtask = response.data;
 
       setProjects(prev => prev.map(proj => {
-        if (proj.id === String(projectId)) {
+        if (String(proj.id) === String(projectId)) {
           const updatedTasks = [...(proj.tasks || []), savedSubtask];
           safeNotify('COMPOSITE', `Subtarea Anclada: ${savedSubtask.title}`, savedSubtask.id);
           
@@ -617,8 +616,8 @@ const moveTask = async (projectId, taskId, newStatus) => {
 
     setProjects(prev => {
       return prev.map(proj => {
-        if (proj.id === String(projectId)) {
-          const updatedTasks = proj.tasks.map(t => t.id === taskId ? { ...t, status: newStatus } : t);
+        if (String(proj.id) === String(projectId)) {
+          const updatedTasks = proj.tasks.map(t => String(t.id) === String(taskId) ? { ...t, status: newStatus } : t);
           return {
             ...proj,
             tasks: updatedTasks,
@@ -648,7 +647,7 @@ const moveTask = async (projectId, taskId, newStatus) => {
 
       setProjects(prev => prev.map(p => {
         if (String(p.id) === String(projectId)) {
-          const finalTasks = p.tasks.filter(t => (t.id !== taskId));
+          const finalTasks = p.tasks.filter(t => String(t.id) !== String(taskId));
           const updatedProj = { ...p, tasks: finalTasks, progress: calculateProgress(finalTasks) };
           globalProjectSubject.notify('TASK_DELETED', { projectId, taskId, project: updatedProj });
           return updatedProj;
@@ -691,7 +690,7 @@ const moveTask = async (projectId, taskId, newStatus) => {
       if (insertError) throw insertError;
 
       setProjects(prev => prev.map(proj => {
-        if (proj.id === String(projectId)) {
+        if (String(proj.id) === String(projectId)) {
           const updatedTasks = [...(proj.tasks || []), clonedTask];
           const updatedProj = { 
             ...proj, 
@@ -850,7 +849,7 @@ const moveTask = async (projectId, taskId, newStatus) => {
       updateColumns: (projectId, newColumns) => {
         setProjects(prev => {
           const updated = prev.map(proj => 
-            proj.id === String(projectId) ? { ...proj, board: { ...proj.board, columns: newColumns } } : proj
+            String(proj.id) === String(projectId) ? { ...proj, board: { ...proj.board, columns: newColumns } } : proj
           );
           globalProjectSubject.notify('COLUMNS_UPDATED', { projectId, newColumns, all: updated });
           setTrigger(p => p + 1);

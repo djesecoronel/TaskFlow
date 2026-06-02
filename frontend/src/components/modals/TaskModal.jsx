@@ -13,7 +13,8 @@ export default function TaskModal({
   initialStatus, 
   allTasks = [],
   taskToEdit = null, // <--- INYECTADO: PARA MODO EDICIÓN
-  isSubtask = false  // <--- INYECTADO: PARA MODO COMPOSITE
+  isSubtask = false,  // <--- INYECTADO: PARA MODO COMPOSITE
+  projectId = null    // <--- NUEVA FUNCIONALIDAD: VÍNCULO A PROYECTO
 }) {
   
   // --- FUNCIÓN DE EXTRACTOR DE IDENTIDAD (DEFENSIVA) ---
@@ -34,7 +35,7 @@ export default function TaskModal({
     assignedTo: getInitialAssignee(),
     status: initialStatus || 'TO_DO',
     parent_id: null, 
-    subtasks: [],    
+    subtasks: [],     
     attachments: [], 
     comments: []    
   });
@@ -114,7 +115,8 @@ export default function TaskModal({
         ...taskData,
         assigned_to: taskData.assignedTo,
         type: taskData.type || 'TASK', // Aseguramos que no se pierda el tipo
-        description: taskData.description || 'Sin descripción'
+        description: taskData.description || 'Sin descripción',
+        project_id: projectId // Inyectamos el ID de proyecto si existe
     };
     delete payload.assignedTo;
 

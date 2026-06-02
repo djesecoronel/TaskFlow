@@ -18,6 +18,10 @@ class Task(ABC):
         self.column_id = column_id
         self.user_id = kwargs.get("user_id") # FK con tabla users en tu esquema
         
+        # --- NUEVA FUNCIONALIDAD: CAPTURA DE TIPO ---
+        # Extraemos el tipo de kwargs o lo asignamos vía get_type()
+        self._type = kwargs.get("type")
+        
         # --- ATRIBUTO PARA ABSTRACT FACTORY ---
         self.visual_style = kwargs.get("visual_style", {})
         
@@ -50,6 +54,9 @@ class Task(ABC):
     @abstractmethod
     def get_type(self):
         """Patrón Factory Method: Obliga a las subclases a definir su tipo"""
+        # Si ya se definió un tipo en el init, lo devolvemos; si no, el abstracto obliga a la subclase
+        if self._type:
+            return TaskType(self._type) if isinstance(self._type, str) else self._type
         pass
 
     def to_dict(self):
@@ -71,7 +78,7 @@ class Task(ABC):
             "description": self.description,
             "status": self.status.value if isinstance(self.status, TaskStatus) else self.status,
             "priority": self.priority.value if isinstance(self.priority, PriorityTask) else self.priority,
-            "type": self.get_type().value,
+            "type": self.get_type().value if self.get_type() else self._type,
             "due_date": self.due_date.isoformat() if isinstance(self.due_date, datetime) else self.due_date,
             "history": self.history,
             "comments": self.comments, # Campo jsonb en Supabase
@@ -105,6 +112,7 @@ class Task(ABC):
             
         if "column_id" in data: self.column_id = data["column_id"]
         if "visual_style" in data: self.visual_style = data["visual_style"]
+        if "type" in data: self._type = data["type"]
 
         for key, value in data.items():
             forbidden = ["title", "description", "status", "priority", "due_date", "column_id", "task_id", "visual_style", "subtasks"]

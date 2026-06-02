@@ -115,12 +115,26 @@ class TaskRepository:
         elif self.pk == "task_id" and "id" in data:
             data["task_id"] = data.pop("id")
 
+        # --- [PROTOCOLO DE BLINDAJE DE INTEGRIDAD] ---
+        # Aseguramos que el tipo siempre tenga un valor válido antes de persistir
+        if not data.get("type"):
+            data["type"] = "TASK"
+
+        # --- [NUEVA FUNCIONALIDAD: FILTRO DE ESQUEMA PARA PREVENIR PGRST204] ---
+        allowed_columns = {
+            "id", "title", "description", "status", "priority", "type", 
+            "due_date", "column_id", "user_id", "project_id", "parent_task"
+        }
+        
+        # Filtramos el diccionario para enviar solo lo que la DB acepta realmente
+        filtered_data = {k: v for k, v in data.items() if k in allowed_columns}
+
         for i in range(retries + 1):
             try:
-                print(f"🚀 [REPO_SYNC]: Desplegando nueva unidad en '{self.table}' -> {data.get('title', 'SIN_TITULO')}")
+                print(f"🚀 [REPO_SYNC]: Desplegando nueva unidad en '{self.table}' -> {filtered_data.get('title', 'SIN_TITULO')} [TIPO: {filtered_data.get('type')}]")
                 
                 response = self.client.table(self.table)\
-                    .insert(data)\
+                    .insert(filtered_data)\
                     .execute()
                 
                 if not response.data:
@@ -135,7 +149,7 @@ class TaskRepository:
                     time.sleep(1)
                     continue
                 print(f"🔥 [REPO_CRITICAL]: Fallo persistente en protocolo de inserción -> {str(e)}")
-                return data 
+                return data
     
     def update(self, task_id, data, retries=2):
         """
@@ -145,6 +159,11 @@ class TaskRepository:
         # Blindaje: El ID del nodo es inmutable durante la sincronización
         data.pop(self.pk, None)
         data.pop("task_id", None)
+
+        # --- [PROTOCOLO DE BLINDAJE DE INTEGRIDAD] ---
+        # Si se está actualizando, verificamos integridad del tipo
+        if "type" in data and not data["type"]:
+            data["type"] = "TASK"
 
         for i in range(retries + 1):
             try:
